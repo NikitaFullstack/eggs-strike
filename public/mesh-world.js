@@ -14,6 +14,10 @@
         materials.set(front, data.materials[i / 3]); materials.set(back, data.materials[i / 3]);
       }
     }
+    // Bound subdivision so large floor triangles do not multiply across deep
+    // Octree branches. Ray and capsule queries still use the original triangles.
+    tree.maxLevel = 6;
+    tree.trianglesPerLeaf = 32;
     tree.build();
     const ray = new THREE.Ray(), normal = new THREE.Vector3();
     const capsule = new Capsule(), contacts = [];

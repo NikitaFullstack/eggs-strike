@@ -32,7 +32,8 @@ const S = {
   arena: null,
   mapId: DEFAULT_ARENA.id,
   roomState: 'lobby',
-  meta: new Map(),      // id -> {name, color}
+  meta: new Map(),      // id -> {name, color, appearance}
+  appearance: readAppearance(),
   players: new Map(),   // id -> remote view
   lobbyPlayers: [],
   timeLeft: 300,
@@ -69,6 +70,30 @@ let aimBlend = 0;
 let bobTime = 0;
 let moving = false;
 let clock = 0;
+let wardrobe = null;
+
+function readAppearance() {
+  try { return EggAppearance.normalize(JSON.parse(localStorage.getItem('egg-appearance'))); }
+  catch { return EggAppearance.normalize(); }
+}
+
+function selectAppearance(value) {
+  S.appearance = EggAppearance.normalize(value);
+  let saved = true;
+  try { localStorage.setItem('egg-appearance', JSON.stringify(S.appearance)); } catch { saved = false; }
+  if (S.screen === 'lobby' && S.code) send({ t: 'appearance', appearance: S.appearance });
+  updateLobbyIdentity();
+  return saved;
+}
+
+function rememberPlayer(p) {
+  const appearance = EggAppearance.normalize(p.appearance, { color: p.c });
+  S.meta.set(p.i, { name: p.n, color: appearance.color, appearance });
+  const view = S.players.get(p.i);
+  if (view && EggAppearance.key(view.avatar.appearance) !== EggAppearance.key(appearance)) {
+    EggAvatar.apply(THREE, view.avatar, appearance);
+  }
+}
 
 /* ============================ сеть ============================ */
 
@@ -138,7 +163,7 @@ function onMessage(msg) {
       S.lobbyPlayers = msg.players;
       S.mapId = msg.mapId || S.mapId;
       S.roomState = msg.state;
-      for (const p of msg.players) S.meta.set(p.i, { name: p.n, color: p.c });
+      for (const p of msg.players) rememberPlayer(p);
       if (S.screen === 'lobby') renderLobbyPlayers();
       break;
     }
@@ -162,6 +187,7 @@ function onMessage(msg) {
 /* ============================ интерфейс ============================ */
 
 function show(screen) {
+  wardrobe?.close();
   if (screen !== 'hud') { clearCombat(); grenadeEffects?.clear(); }
   S.screen = screen;
   for (const id of ['menu', 'lobby', 'hud', 'results']) {
@@ -187,9 +213,11 @@ function renderLobbyPlayers() {
     const li = document.createElement('li');
 
     const dot = document.createElement('span');
-    dot.className = 'dot';
-    dot.style.background = p.c;
-    dot.style.color = p.c;
+    dot.className = 'appearance-mini';
+    dot.style.setProperty('--shell-color', p.c);
+    dot.innerHTML = EggWardrobe.icon('face', EggAppearance.normalize(p.appearance).face);
+    const hatName = EggAppearance.HATS.find(hat => hat.id === p.appearance?.hat)?.name;
+    dot.title = hatName || 'Без шляпы';
 
     const name = document.createElement('span');
     name.textContent = p.n;
@@ -266,8 +294,7 @@ function updateLobbyIdentity() {
   const me = S.lobbyPlayers.find(p => p.i === S.id);
   $('characterName').textContent = S.screen === 'lobby' && me ? me.n : ($('name').value.trim() || 'Яйцо');
   if (lobbyEgg) {
-    const body = lobbyEgg.children[0];
-    body.material.color.set(S.screen === 'lobby' && me ? me.c : '#ffd23f');
+    EggAvatar.apply(THREE, lobbyEgg.userData.avatar, S.appearance);
   }
 }
 
@@ -282,6 +309,8 @@ let busyTimer = null;
 
 function setMenuBusy(btn, text) {
   if (!btn) return;
+  wardrobe?.close();
+  $('btnCustomize').disabled = true;
   btn.dataset.old = btn.textContent;
   btn.disabled = true;
   btn.textContent = text;
@@ -289,6 +318,7 @@ function setMenuBusy(btn, text) {
 
 function clearMenuBusy() {
   clearTimeout(busyTimer);
+  $('btnCustomize').disabled = false;
   for (const id of ['btnCreate', 'btnJoin']) {
     const b = $(id);
     if (!b) continue;
@@ -315,7 +345,7 @@ async function createRoom() {
   startBusyTimeout();
   try {
     await connect();
-    send({ t: 'create', name, mapId: S.mapId });
+    send({ t: 'create', name, mapId: S.mapId, appearance: S.appearance });
   } catch (e) {
     clearMenuBusy();
     $('menuMsg').textContent = e.message;
@@ -334,7 +364,7 @@ async function joinRoom() {
   startBusyTimeout();
   try {
     await connect();
-    send({ t: 'join', name, code });
+    send({ t: 'join', name, code, appearance: S.appearance });
   } catch (e) {
     clearMenuBusy();
     $('menuMsg').textContent = e.message;
@@ -511,7 +541,7 @@ function initLobby() {
   blob.position.y = .012;
   lobbyScene.add(blob);
 
-  lobbyEgg = makeEgg('#ffd23f').group;
+  lobbyEgg = makeEgg(S.appearance).group;
   lobbyEgg.scale.setScalar(1.6);
   lobbyEgg.rotation.y = Math.PI - .25;
   lobbyScene.add(lobbyEgg);
@@ -939,30 +969,12 @@ function makeBlobShadow() {
   return mesh;
 }
 
-function makeEgg(colorHex) {
+function makeEgg(appearance) {
   const group = new THREE.Group();
-  const color = new THREE.Color(colorHex);
-
-  const body = new THREE.Mesh(
-    new THREE.SphereGeometry(0.5, 24, 20),
-    new THREE.MeshPhongMaterial({ color, shininess: 45, specular: 0x555555 }),
-  );
-  body.scale.set(1, 1.32, 1);
-  body.position.y = 0.66;
-  body.castShadow = false;
-  group.add(body);
-
-  const white = new THREE.MeshLambertMaterial({ color: 0xffffff });
-  const black = new THREE.MeshLambertMaterial({ color: 0x151824 });
-
-  for (const sx of [-0.16, 0.16]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.115, 12, 12), white);
-    eye.position.set(sx, 0.8, -0.4);
-    group.add(eye);
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), black);
-    pupil.position.set(sx, 0.8, -0.49);
-    group.add(pupil);
-  }
+  const avatar = EggAvatar.create(THREE, appearance);
+  const { body } = avatar;
+  group.add(avatar.group);
+  group.userData.avatar = avatar;
 
   const gun = new THREE.Group();
   const gunMat = new THREE.MeshPhongMaterial({ color: 0x46505b, shininess:32, specular:0x89948d, map: GUN_TEX ? GUN_TEX.metal : null });
@@ -987,12 +999,12 @@ function makeEgg(colorHex) {
   const shield=new THREE.Mesh(new THREE.SphereGeometry(.54,16,12),new THREE.MeshBasicMaterial({color:0x80dbe9,transparent:true,opacity:.14,depthWrite:false,wireframe:true}));
   shield.position.y=.66;shield.scale.y=1.35;shield.visible=false;group.add(shield);
   if(S.arena)group.scale.set(S.arena.playerCollision.radius/.5,S.arena.playerCollision.height/1.32,S.arena.playerCollision.radius/.5);
-  return { group, body, gun, shield };
+  return { group, body, gun, shield, avatar };
 }
 
 function addRemote(p) {
   const meta = S.meta.get(p.i) || { name: 'Яйцо', color: '#ffd23f' };
-  const { group, body, gun, shield } = makeEgg(meta.color);
+  const { group, body, gun, shield, avatar } = makeEgg(meta.appearance || { color: meta.color });
   group.userData.playerId = p.i;
   group.position.set(p.x, p.y, p.z);
   group.rotation.y = p.yaw || 0;
@@ -1005,6 +1017,7 @@ function addRemote(p) {
     body,
     gun,
     shield,
+    avatar,
     target: { x: p.x, y: p.y, z: p.z, yaw: p.yaw || 0 },
     samples: [],
     hp: p.hp,
@@ -1017,17 +1030,24 @@ function addRemote(p) {
   return view;
 }
 
-function clearRemotes() {
-  for (const v of S.players.values()) {
-    scene.remove(v.group);
-    v.group.traverse((o) => {
-      if (o.geometry) o.geometry.dispose?.();
-      if (o.material) {
-        if (o.material.map) o.material.map.dispose?.();
-        o.material.dispose?.();
-      }
-    });
+function disposeRemote(view) {
+  scene.remove(view.group);
+  EggAvatar.dispose(view.avatar);
+  view.group.remove(view.avatar.group);
+  const materials = new Set(), textures = new Set();
+  view.group.traverse(object => {
+    object.geometry?.dispose();
+    if (object.material) materials.add(object.material);
+  });
+  for (const material of materials) {
+    if (material.map && !Object.values(GUN_TEX || {}).includes(material.map)) textures.add(material.map);
+    material.dispose();
   }
+  for (const texture of textures) texture.dispose();
+}
+
+function clearRemotes() {
+  for (const view of S.players.values()) disposeRemote(view);
   S.players.clear();
 }
 
@@ -1075,7 +1095,7 @@ function startGame(msg) {
 
   if (msg.players) {
     S.lobbyPlayers = msg.players;
-    for (const p of msg.players) S.meta.set(p.i, { name: p.n, color: p.c });
+    for (const p of msg.players) rememberPlayer(p);
   }
 
   const arena = msg.arena || S.arena;
@@ -1182,6 +1202,7 @@ function frame(now) {
   }
 
   renderLobby(dt);
+  wardrobe?.render();
 }
 
 function surfaceHeight(x, z, limit = S.me.y + S.arena.playerCollision.maxStepHeight) {
@@ -1792,7 +1813,7 @@ function onSnapshot(msg) {
   for (const id of [...S.players.keys()]) {
     if (!seen.has(id)) {
       const v = S.players.get(id);
-      scene.remove(v.group);
+      disposeRemote(v);
       S.players.delete(id);
     }
   }
@@ -2651,6 +2672,7 @@ $('boot')?.classList.add('hidden');
   try {
     initMapSelection();
     initLobby();
+    wardrobe = EggWardrobe.create(THREE, { getAppearance: () => S.appearance, onChange: selectAppearance });
   } catch (e) {
     console.error('lobby init failed', e);
   }

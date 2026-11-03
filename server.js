@@ -14,6 +14,7 @@ const HouseholdMaps = require('./public/household-maps.js');
 const HouseholdShapes = require('./public/household-shapes.js');
 const MeshWorld = require('./public/mesh-world.js');
 const Grenades = require('./public/grenade-physics.js');
+const EggAppearance = require('./public/egg-appearance.js');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -33,7 +34,7 @@ const WEAPONS = {
   deagle: { id: 'deagle', name: 'Дигл',     short: 'ДИГЛ', dmg: 52, rpm: 160, mag: 7,  reload: 2.3, spread: 0.01,  pellets: 1, auto: false, recoil: 0.2 },
 };
 
-const COLORS = ['#ffd23f', '#4fc3f7', '#ff6f91', '#9be564', '#ffa94d', '#b197fc', '#63e6be', '#ff8787'];
+const COLORS = EggAppearance.COLORS.map(option => option.value);
 
 const MAPS = Object.fromEntries([DEFAULT_MAP, TRAINING_MAP, ...HouseholdMaps.maps].map(map => [map.id, map]));
 
@@ -179,7 +180,7 @@ function broadcast(room, obj, exceptId) {
 }
 
 function publicPlayer(p) {
-  return { i: p.id, n: p.name, c: p.color, k: p.kills, d: p.deaths, hp: p.hp, a: p.alive ? 1 : 0 };
+  return { i: p.id, n: p.name, c: p.appearance.color, appearance: p.appearance, k: p.kills, d: p.deaths, hp: p.hp, a: p.alive ? 1 : 0 };
 }
 
 function lobbyState(room) {
@@ -658,8 +659,9 @@ function onMessage(ws, msg) {
     }
 
     const id = nextId++;
+    const appearance = EggAppearance.normalize(msg.appearance, { color: freeColor(room) });
     const player = {
-      id, name, color: freeColor(room), ws,
+      id, name, color: appearance.color, appearance, ws,
       x: 0, y: 0, z: 0, yaw: 0, pitch: 0,
       hp: 100, alive: true, inLobby: false, kills: 0, deaths: 0,
       respawnAt: 0, lastShot: 0,
@@ -713,6 +715,15 @@ function onMessage(ws, msg) {
   if (!room || !p) return;
 
   switch (msg.t) {
+    case 'appearance': {
+      if (room.state === 'playing' && !p.inLobby) return;
+      const appearance = EggAppearance.normalize(msg.appearance, p.appearance);
+      if (EggAppearance.key(appearance) === EggAppearance.key(p.appearance)) return;
+      p.appearance = appearance;
+      p.color = appearance.color;
+      broadcastLobby(room);
+      break;
+    }
     case 'start': {
       if (p.id !== room.hostId) return;
       startMatch(room);

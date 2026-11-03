@@ -1252,3 +1252,58 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--yellow); outlin
 
 .hitmarker[data-kind="kill"] { filter: drop-shadow(0 0 5px #ffd23f); }
 .hitmarker[data-kind="kill"] i { background: #ffd23f; }
+
+/* ---------- гардероб ---------- */
+.customize-entry { position: absolute; top: 90px; left: 40px; pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 10px 15px; border: 1px solid #d9ff5670; border-radius: 6px; color: #e9f6d0; background: #192725e8; font: 700 12px Arial, sans-serif; cursor: pointer; }
+.customize-entry span { color: #d9ff56; font-size: 20px; }
+.customize-entry:hover { background: #304133; }
+.customize-entry:disabled { opacity: .45; cursor: wait; }
+.wardrobe { --yellow: #d9ff56; --muted: #98aaa6; color: #edf2eb; width: min(960px, calc(100vw - 40px)); max-height: calc(100dvh - 40px); padding: 0; border: 1px solid #52655c; border-radius: 18px; background: #15201f; box-shadow: 0 30px 110px #0009; overflow: auto; font-family: Arial, sans-serif; }
+.wardrobe::backdrop { background: #06100de6; backdrop-filter: blur(9px); }
+.wardrobe-header { display: flex; align-items: center; justify-content: space-between; padding: 24px 28px; border-bottom: 1px solid #ffffff12; }
+.wardrobe-kicker { color: #d9ff56; font-size: 10px; font-weight: 800; letter-spacing: 2px; }
+.wardrobe h2 { margin: 7px 0 0; font-size: 25px; letter-spacing: -.7px; }
+.wardrobe-close { width: 36px; height: 36px; border: 1px solid #ffffff20; border-radius: 50%; color: #d1ddd6; background: transparent; font-size: 25px; cursor: pointer; }
+.wardrobe-close:hover { background: #ffffff12; }
+.wardrobe-body { display: grid; grid-template-columns: .9fr 1.1fr; }
+.wardrobe-stage { position: relative; min-height: 440px; background: radial-gradient(ellipse at 50% 55%, #39534b 0, #263c35 35%, #192b28 70%); overflow: hidden; }
+.wardrobe-stage::after { content: ''; position: absolute; width: 65%; aspect-ratio: 1; border: 1px solid #d5f4b518; border-radius: 50%; left: 17.5%; top: 17%; pointer-events: none; }
+.wardrobe-stage-label { position: absolute; top: 24px; left: 26px; color: #a5c7b3; font-size: 9px; letter-spacing: 2px; }
+#avatarPreview { display: block; width: 100%; height: 100%; position: absolute; inset: 0; touch-action: none; cursor: grab; outline-offset: -6px; }
+#avatarPreview:active { cursor: grabbing; }
+.wardrobe-preview-caption { position: absolute; left: 14px; right: 14px; bottom: 24px; display: flex; flex-direction: column; text-align: center; gap: 8px; pointer-events: none; }
+.wardrobe-preview-caption strong { font-size: 18px; }
+.wardrobe-preview-caption span { color: #9ab3a8; font-size: 10px; }
+.wardrobe-options { padding: 25px 28px; display: flex; flex-direction: column; gap: 24px; }
+.wardrobe fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.wardrobe legend { margin-bottom: 12px; padding: 0; font-size: 10px; color: #80988a; font-weight: 800; }
+.wardrobe legend span { margin-left: 9px; color: #e3eae0; font-size: 12px; }
+.appearance-colors { display: grid; grid-template-columns: repeat(8, 1fr); gap: 9px; }
+.appearance-color { aspect-ratio: 1; width: 100%; padding: 4px; background: transparent; border: 1px solid transparent; border-radius: 50%; cursor: pointer; }
+.appearance-color i { display: block; width: 100%; height: 100%; border-radius: 50%; background: var(--shell-color); box-shadow: inset 0 0 0 1px #ffffff25; }
+.appearance-color[aria-pressed="true"] { border-color: #d9ff56; background: #d9ff5610; }
+.appearance-grid { display: grid; gap: 7px; }
+.faces-grid { grid-template-columns: repeat(3, 1fr); }
+.hats-grid { grid-template-columns: repeat(4, 1fr); }
+.appearance-option { min-width: 0; padding: 10px 3px 8px; display: flex; flex-direction: column; align-items: center; gap: 6px; border: 1px solid #ffffff14; border-radius: 7px; background: #ffffff03; color: #acbeb3; font: 10px Arial, sans-serif; cursor: pointer; }
+.appearance-option svg { width: 35px; height: 27px; }
+.appearance-option:hover { background: #ffffff09; border-color: #90ad8f; }
+.appearance-option[aria-pressed="true"] { border-color: #d9ff56; color: #e7f8b5; background: #d9ff5610; }
+.wardrobe-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 28px; border-top: 1px solid #ffffff12; }
+.wardrobe-footer > span { color: #98aaa6; font-size: 10px; }
+.wardrobe-footer > div { display: flex; gap: 12px; }
+.wardrobe-random, .wardrobe-done { padding: 12px 16px; border-radius: 6px; font: 700 11px Arial, sans-serif; cursor: pointer; }
+.wardrobe-random { color: #cad8ce; background: transparent; border: 1px solid #ffffff25; }
+.wardrobe-done { color: #182016; background: #d9ff56; border: 1px solid #d9ff56; min-width: 116px; display: flex; justify-content: space-between; gap: 15px; }
+.appearance-mini { width: 22px; height: 27px; border-radius: 50% 50% 44% 44%; flex: 0 0 auto; display: inline-grid; place-items: center; background: var(--shell-color); color: #14201a; position: relative; }
+.appearance-mini svg { width: 19px; height: 18px; }
+@media (max-width: 760px) {
+  .customize-entry { top: 62px; left: 20px; font-size: 10px; padding: 7px 10px; gap: 6px; }
+  .customize-entry span { font-size: 14px; }
+  .wardrobe { width: calc(100vw - 20px); max-height: calc(100dvh - 20px); border-radius: 12px; }
+  .wardrobe-header { padding: 16px; }.wardrobe h2 { font-size: 20px; }
+  .wardrobe-body { grid-template-columns: 1fr; }.wardrobe-stage { min-height: 245px; }
+  .wardrobe-stage-label { top: 16px; left: 16px; font-size: 8px; }.wardrobe-preview-caption { bottom: 12px; gap: 4px; }.wardrobe-preview-caption strong { font-size: 14px; }
+  .wardrobe-options { padding: 18px 16px; gap: 18px; }.appearance-colors { gap: 7px; }.appearance-color { max-width: 40px; }
+  .wardrobe-footer { padding: 14px 16px; flex-wrap: wrap; }.wardrobe-footer > div { width: 100%; }.wardrobe-footer button { flex: 1; }
+}

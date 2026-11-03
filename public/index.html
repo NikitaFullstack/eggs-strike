@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>ЯЙЦА — перестрелка</title>
-<link rel="stylesheet" href="style.css?v=20261103j" />
+<link rel="stylesheet" href="style.css?v=20261103l" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥚</text></svg>" />
 </head>
 <body>
@@ -78,6 +78,7 @@
 
 <div id="lobbyShowcase" class="lobby-showcase">
   <div id="characterLabel" class="character-label"><strong id="characterName">Яйцо</strong></div>
+  <button id="btnCustomize" class="customize-entry" aria-haspopup="dialog"><span aria-hidden="true">✦</span> Моё яйцо</button>
   <section class="map-section" aria-labelledby="mapsTitle">
     <div class="maps-heading"><h2 id="mapsTitle">Карта</h2><p id="mapHint"></p></div>
     <div id="menuMaps" class="map-grid"></div>
@@ -85,6 +86,26 @@
   </section>
   <footer class="lobby-footer"><span>WASD <b>ДВИЖЕНИЕ</b> <span class="footer-dot">·</span> SHIFT <b>СПРИНТ</b> <span class="footer-dot">·</span> ЛКМ <b>ОГОНЬ</b> <span class="footer-dot">·</span> SPACE <b>ПРЫЖОК</b> <span class="footer-dot">·</span> G <b>ГРАНАТА</b></span></footer>
 </div>
+
+<dialog id="wardrobe" class="wardrobe" aria-labelledby="wardrobeTitle">
+  <header class="wardrobe-header">
+    <div><span class="wardrobe-kicker">ГАРДЕРОБ</span><h2 id="wardrobeTitle">Твоё яйцо. Твой стиль.</h2></div>
+    <button id="btnWardrobeClose" class="wardrobe-close" aria-label="Закрыть гардероб">×</button>
+  </header>
+  <div class="wardrobe-body">
+    <div class="wardrobe-stage">
+      <span class="wardrobe-stage-label">EGG LAB / 01</span>
+      <canvas id="avatarPreview" aria-label="Предпросмотр выбранного образа яйца"></canvas>
+      <div class="wardrobe-preview-caption"><strong id="appearanceName">Твой образ</strong><span>Потяни, чтобы повернуть</span></div>
+    </div>
+    <div class="wardrobe-options">
+      <fieldset><legend>01 <span>Цвет скорлупы</span></legend><div id="appearanceColors" class="appearance-colors"></div></fieldset>
+      <fieldset><legend>02 <span>Выражение лица</span></legend><div id="appearanceFaces" class="appearance-grid faces-grid"></div></fieldset>
+      <fieldset><legend>03 <span>Головной убор</span></legend><div id="appearanceHats" class="appearance-grid hats-grid"></div></fieldset>
+    </div>
+  </div>
+  <footer class="wardrobe-footer"><span id="appearanceStatus" role="status">Сохраняется автоматически</span><div><button id="btnAppearanceRandom" class="wardrobe-random">Случайный образ</button><button id="btnWardrobeDone" class="wardrobe-done">Готово <span aria-hidden="true">↗</span></button></div></footer>
+</dialog>
 
 <!-- HUD -->
 <section id="hud" class="hidden">
@@ -206,7 +227,10 @@
 <script src="household-world.js?v=20261103k"></script>
 <script src="combat-effects.js?v=20261103h"></script>
 <script src="grenade-effects.js?v=20261103i"></script>
-<script type="module" src="game.js?v=20261103k"></script>
+<script src="egg-appearance.js?v=20261103l"></script>
+<script src="egg-avatar.js?v=20261103l"></script>
+<script src="egg-wardrobe.js?v=20261103l"></script>
+<script type="module" src="game.js?v=20261103l"></script>
 <script>
   (function () {
     var retry = document.getElementById('bootRetry');
