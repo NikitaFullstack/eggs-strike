@@ -44,6 +44,42 @@ globalThis.EggHenhouseDressing = function(THREE,arena,group,materials) {
   materials.metal=new THREE.MeshPhongMaterial({map:oldMetal.map,color:0xffffff,shininess:45,specular:0xa9bbc1,side:THREE.DoubleSide});
   group.traverse(o=>{if(o.isMesh&&o.material===oldMetal)o.material=materials.metal;});oldMetal.dispose();
   const decor=new THREE.Group();decor.name='henhouse-dressing';decor.userData.collidable=false;group.add(decor);
+  // Painted guides follow the actual ramp planes and deck tops. They add no
+  // obstacles, and make entrances and drop edges legible from player height.
+  const paintPositions=[],paintColors=[],paintTint=new THREE.Color();
+  function paintQuad(points,color){
+    paintTint.set(color);
+    for(const i of [0,1,2,0,2,3]){paintPositions.push(...points[i]);paintColors.push(paintTint.r,paintTint.g,paintTint.b);}
+  }
+  for(const ramp of source.ramps){
+    const y=z=>ramp.startY+(ramp.endY-ramp.startY)*(z-ramp.startZ)/(ramp.endZ-ramp.startZ)+.014;
+    for(const sign of [-1,1]){
+      const x=ramp.centerX+sign*(ramp.widthX/2-.17),z0=ramp.startZ,z1=ramp.endZ;
+      paintQuad([[x-.035,y(z0),z0],[x+.035,y(z0),z0],[x+.035,y(z1),z1],[x-.035,y(z1),z1]],'#f9df9b');
+    }
+    // Cross strips at both transitions distinguish the flat deck from the slope.
+    for(const z of [ramp.startZ+.12,ramp.endZ-.20]){
+      const left=ramp.centerX-ramp.widthX/2+.18,right=ramp.centerX+ramp.widthX/2-.18;
+      paintQuad([[left,y(z),z],[right,y(z),z],[right,y(z+.08),z+.08],[left,y(z+.08),z+.08]],'#f9df9b');
+    }
+  }
+  for(const platform of source.elevatedPlatforms)for(const sign of [-1,1]){
+    const x=platform.position[0]+sign*(platform.size[0]/2-.17),z0=platform.position[2]-platform.size[2]/2,z1=platform.position[2]+platform.size[2]/2,y=platform.topY+.014;
+    paintQuad([[x-.035,y,z0],[x+.035,y,z0],[x+.035,y,z1],[x-.035,y,z1]],'#f9df9b');
+  }
+  for(const spawn of source.spawns){
+    const [x,y,z]=spawn.position;
+    for(let i=0;i<32;i++){
+      const a=i*Math.PI/16,b=(i+1)*Math.PI/16;
+      paintQuad([[x+Math.cos(a)*.60,y+.014,z+Math.sin(a)*.60],[x+Math.cos(a)*.68,y+.014,z+Math.sin(a)*.68],[x+Math.cos(b)*.68,y+.014,z+Math.sin(b)*.68],[x+Math.cos(b)*.60,y+.014,z+Math.sin(b)*.60]],spawn.color);
+    }
+  }
+  const paintGeometry=new THREE.BufferGeometry();
+  paintGeometry.setAttribute('position',new THREE.Float32BufferAttribute(paintPositions,3));
+  paintGeometry.setAttribute('color',new THREE.Float32BufferAttribute(paintColors,3));
+  paintGeometry.computeVertexNormals();
+  const paint=new THREE.Mesh(paintGeometry,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1}));
+  paint.name='henhouse-route-markings';decor.add(paint);
   const straw=[];
   for(const b of source.obstacles.filter(b=>b.asset==='hay_bale'))for(let i=0;i<100;i++){
     const x=b.position[0]+(random()-.5)*b.size[0],y=b.position[1]+random()*b.size[1],z=b.position[2]+b.size[2]/2+.002;

@@ -29,7 +29,7 @@
   </header>
   <div class="menu-bottom">
     <div class="menu-controls panel">
-      <p class="panel-description">До 8 игроков · 5 минут</p>
+      <p class="panel-description">До 4 игроков · 5 минут</p>
       <label class="field">
         <span>Имя</span>
         <input id="name" maxlength="12" placeholder="Яйцо" autocomplete="off" spellcheck="false" />
@@ -83,7 +83,7 @@
     <div id="menuMaps" class="map-grid"></div>
     <div id="roomMaps" class="map-grid hidden"></div>
   </section>
-  <footer class="lobby-footer"><span>WASD <b>ДВИЖЕНИЕ</b> <span class="footer-dot">·</span> SHIFT <b>СПРИНТ</b> <span class="footer-dot">·</span> ЛКМ <b>ОГОНЬ</b> <span class="footer-dot">·</span> SPACE <b>ПРЫЖОК</b></span></footer>
+  <footer class="lobby-footer"><span>WASD <b>ДВИЖЕНИЕ</b> <span class="footer-dot">·</span> SHIFT <b>СПРИНТ</b> <span class="footer-dot">·</span> ЛКМ <b>ОГОНЬ</b> <span class="footer-dot">·</span> SPACE <b>ПРЫЖОК</b> <span class="footer-dot">·</span> G <b>ГРАНАТА</b></span></footer>
 </div>
 
 <!-- HUD -->
@@ -110,6 +110,13 @@
 
   <span id="ammo" class="ammo">30</span>
 
+  <div id="grenadeSlot" class="grenade-slot" aria-label="Гранаты, клавиша G">
+    <kbd>G</kbd>
+    <svg width="22" height="26" viewBox="0 0 22 26" aria-hidden="true"><path d="M8 6V2h7l3 5M9 4h5M6 9l-3 5 1 7 5 3h5l4-4 1-7-5-5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m7 12 8 7m-9-1 9-5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+    <span id="grenadeStatus">Граната</span><strong id="grenadeCount">2</strong>
+  </div>
+  <div id="grenadeWarning" class="grenade-warning hidden" role="status"></div>
+
   <ul id="killfeed" class="killfeed"></ul>
 
   <div id="weaponToast" class="weapon-toast"></div>
@@ -128,6 +135,7 @@
   <div id="pause" class="pause hidden">
     <p>Пауза</p>
     <span>Бой продолжается</span>
+    <small class="pause-controls">WASD · движение &nbsp; Shift · спринт<br>ЛКМ · огонь &nbsp; R · перезарядка &nbsp; G · граната</small>
     <div class="pause-actions">
       <button id="btnResumeGame" class="stuck">Продолжить</button>
       <button id="btnPauseSettings" class="stuck">⚙ Настройки</button>
@@ -194,6 +202,7 @@
 <script src="henhouse-dressing.js?v=20261103h"></script>
 <script src="coop-world.js?v=20261103h"></script>
 <script src="combat-effects.js?v=20261103h"></script>
+<script src="grenade-effects.js?v=20261103i"></script>
 <script type="module" src="game.js?v=20261103h"></script>
 <script>
   (function () {

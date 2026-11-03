@@ -40,6 +40,7 @@ const S = {
     x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vy: 0, onGround: true,
     hp: 100, alive: true, kills: 0, deaths: 0,
     energy: 100, sprinting: false, sprintExhausted: false,
+    grenades: 2, grenadeReadyAt: 0, grenadeThrowAt: 0,
     ammo: {}, weapon: null, reloading: false, reloadEnd: 0, reloadWeapon: null,
     lastShot: 0, deadUntil: 0, deadAt: 0, zoom: false, aiming: false, respawnAsked: false,
     stepTimer: 0, wasAir: false,
@@ -55,6 +56,7 @@ let connectPromise = null;
 let recoil = 0;
 let jumpQueued = false;
 let combat = null;
+let grenadeEffects = null;
 let muzzleUntil = 0;
 const soundTimers = new Set();
 let ambientAt = 0;
@@ -140,6 +142,8 @@ function onMessage(msg) {
     case 'hit': if (S.screen === 'hud') onHit(msg); break;
     case 'kill': if (S.screen === 'hud') onKill(msg); break;
     case 'shot': if (S.screen === 'hud') onShot(msg); break;
+    case 'grenade': if (S.screen === 'hud') onGrenade(msg); break;
+    case 'explosion': if (S.screen === 'hud') onExplosion(msg); break;
     case 'respawn': onRespawn(msg); break;
     case 'end': onEnd(msg); break;
     case 'error': {
@@ -153,7 +157,7 @@ function onMessage(msg) {
 /* ============================ интерфейс ============================ */
 
 function show(screen) {
-  if (screen !== 'hud') clearCombat();
+  if (screen !== 'hud') { clearCombat(); grenadeEffects?.clear(); }
   S.screen = screen;
   for (const id of ['menu', 'lobby', 'hud', 'results']) {
     $(id).classList.toggle('hidden', id !== screen);
@@ -382,6 +386,7 @@ function initThree(arena) {
 
   scene = new THREE.Scene();
   combat = EggCombat.create(THREE, scene);
+  grenadeEffects = EggGrenadeEffects.create(THREE, scene);
   scene.background = new THREE.Color(arena.theme.sky);
   scene.fog = new THREE.Fog(arena.theme.fog, arena.half * 2, arena.half * 6);
 
@@ -590,7 +595,7 @@ function buildArena(arena) {
   arenaGroup.add(makeSky(arena.theme));
   arenaGroup.add(makeClouds());
   levelView = arena.mesh
-    ? EggMeshWorld.build(THREE, TRAINING_SCENE, TRAINING_TEXTURE, arenaGroup, worldMeshes)
+    ? EggMeshWorld.build(THREE, TRAINING_SCENE, TRAINING_TEXTURE, arenaGroup, worldMeshes, arena)
     : globalThis.EggCoopWorld.build(THREE, arena, arenaGroup, worldMeshes);
 }
 
@@ -1007,6 +1012,7 @@ function clearRemotes() {
 
 function startGame(msg) {
   clearCombat();
+  grenadeEffects?.clear();
   S.roomState = 'playing';
   S.keys = Object.create(null);
   S.firing = false;
@@ -1019,6 +1025,8 @@ function startGame(msg) {
   me.onGround = true;
   me.hp = 100;
   me.energy = 100;
+  me.grenades = msg.you.grenades ?? 2;
+  me.grenadeReadyAt = me.grenadeThrowAt = 0;
   me.sprinting = me.sprintExhausted = false;
   me.alive = true;
   me.kills = 0;
@@ -1088,7 +1096,7 @@ function startGame(msg) {
   $('mapName').textContent = arena.name;
 
   $('death').classList.add('hidden');
-  $('pause').classList.remove('hidden');
+  $('pause').classList.toggle('hidden', S.locked);
   $('reloadHint').classList.add('hidden');
   $('vignette').classList.remove('hit');
   $('killfeed').innerHTML = '';
@@ -1121,7 +1129,7 @@ function frame(now) {
 
   if (S.screen === 'hud' && scene && camera) {
     clock += dt;
-    tickFps(dt);
+    tickFps(visualDt);
     updateMe(dt, visualDt);
     updateRemotes(dt);
     updateEffects(dt);
@@ -1187,12 +1195,17 @@ function updateMe(dt, visualDt = dt) {
         const nx = me.x + dx * speed * dt / steps;
         const nz = me.z + dz * speed * dt / steps;
         const floorX = surfaceHeight(nx, me.z);
-        const feetX = me.onGround && steps > 1 ? Math.max(me.y, floorX) : me.y;
+        const feetX = me.onGround ? Math.max(me.y, floorX) : me.y;
         if (!isBlocked(nx, me.z, feetX) && floorX <= me.y + S.arena.playerCollision.maxStepHeight) me.x = nx;
         const floorZ = surfaceHeight(me.x, nz);
-        const feetZ = me.onGround && steps > 1 ? Math.max(me.y, floorZ) : me.y;
+        const feetZ = me.onGround ? Math.max(me.y, floorZ) : me.y;
         if (!isBlocked(me.x, nz, feetZ) && floorZ <= me.y + S.arena.playerCollision.maxStepHeight) me.z = nz;
-        if (me.onGround && steps > 1) me.y = Math.max(me.y, surfaceHeight(me.x, me.z));
+        if (me.onGround) {
+          const support = surfaceHeight(me.x, me.z);
+          // Follow small downward steps as well as uphill slopes. A real drop
+          // stays airborne, while a ramp keeps jumps and footsteps responsive.
+          if (support >= me.y - S.arena.playerCollision.maxStepHeight && !isBlocked(me.x, me.z, support)) me.y = support;
+        }
       }
       me.sprinting = sprint && (me.x !== beforeX || me.z !== beforeZ);
       bobTime += dt * 9;
@@ -1282,6 +1295,12 @@ function updateMe(dt, visualDt = dt) {
     viewGun.position.y -= reloadPose * .13;
     viewGun.rotation.x = recoil * profile.lift - reloadPose * .28;
     viewGun.rotation.z = -reloadPose * .35;
+    const throwProgress = (performance.now() - me.grenadeThrowAt) / 400;
+    if (me.grenadeThrowAt && throwProgress >= 0 && throwProgress < 1) {
+      const throwPose = Math.sin(throwProgress * Math.PI);
+      viewGun.position.y -= throwPose * .25;
+      viewGun.rotation.x -= throwPose * .35;
+    }
     if (muzzle) muzzle.visible = performance.now() < muzzleUntil && me.alive;
 
   }
@@ -1594,6 +1613,7 @@ function flashMuzzle() {
 
 function updateEffects(dt) {
   combat?.update(dt);
+  grenadeEffects?.update(dt);
   if (S.me.alive && S.locked) updateAmbience();
 }
 
@@ -1605,10 +1625,10 @@ function cancelWeaponFeedback() {
   Sound.stop('reload');
 }
 
-function clearCombat() {
+function clearCombat({ keepExplosions = false } = {}) {
   cancelWeaponFeedback();
   combat?.clear();
-  Sound.stop();
+  Sound.stop(undefined, keepExplosions ? 'explosion' : undefined);
   ambientAt = 0;
   if ($('hitmarker')) { $('hitmarker').classList.remove('show'); delete $('hitmarker').dataset.kind; }
 }
@@ -1647,9 +1667,42 @@ function playReloadSound() {
 
 /* ============================ события матча ============================ */
 
+function throwGrenade() {
+  const me = S.me, now = performance.now();
+  if (S.screen !== 'hud' || !S.locked || !me.alive || now < me.grenadeReadyAt) return;
+  if (me.grenades <= 0) { showWeaponToast('Гранаты закончились'); return; }
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  camera.rotation.set(me.pitch, me.yaw, 0);
+  camera.updateMatrixWorld(true);
+  const direction = camera.getWorldDirection(new THREE.Vector3());
+  sendInput();
+  send({ t: 'grenade', dx: direction.x, dy: direction.y, dz: direction.z });
+  // Inventory changes only after the server acknowledges the throw.
+  me.grenadeReadyAt = now + 650;
+}
+
+function onGrenade(msg) {
+  grenadeEffects?.upsert(msg);
+  if (msg.owner === S.id) {
+    S.me.grenades = msg.remaining;
+    S.me.grenadeThrowAt = performance.now();
+    stopAim();
+    Sound.play('click', { volume: .4, rate: .8 });
+    updateHud();
+  }
+}
+
+function onExplosion(msg) {
+  grenadeEffects?.explosion(msg);
+  const spatial = soundPosition(msg);
+  Sound.play('grenade-explosion', { ...spatial, volume: spatial.volume * .9, channel: 'explosion' });
+  Sound.thump(spatial.volume * .25, spatial.pan, 'explosion');
+}
+
 function onSnapshot(msg) {
   if (S.screen !== 'hud') return;
   S.timeLeft = msg.tl;
+  grenadeEffects?.sync(msg.g || []);
   if (Number.isFinite(msg.at)) {
     S.snapshotAt = msg.at;
     S.snapshotReceived = performance.now();
@@ -1665,6 +1718,7 @@ function onSnapshot(msg) {
       me.serverZ = p.z;
       me.serverY = p.y;
       me.hp = p.hp;
+      me.grenades = p.grenades ?? me.grenades;
       me.immune = !!p.im;
       me.kills = p.k;
       me.deaths = p.d;
@@ -1680,6 +1734,7 @@ function onSnapshot(msg) {
         me.onGround = true;
         me.hp = 100;
         me.energy = 100;
+        me.grenadeReadyAt = me.grenadeThrowAt = 0;
         me.sprinting = me.sprintExhausted = false;
         refillAll();
         me.reloading = false;
@@ -1731,7 +1786,7 @@ function onHit(msg) {
     setTimeout(() => v.classList.remove('hit'), 130);
     playHurt();
   }
-  if (msg.from === S.id) {
+  if (msg.from === S.id && msg.to !== S.id) {
     const hm = $('hitmarker');
     hm.classList.remove('show');
     void hm.offsetWidth;
@@ -1746,7 +1801,7 @@ function onKill(msg) {
 
   if (msg.victim === S.id) {
     const me = S.me;
-    clearCombat();
+    clearCombat({ keepExplosions: true });
     me.alive = false;
     me.deadUntil = performance.now() + 2200;
     me.deadAt = performance.now();
@@ -1755,15 +1810,15 @@ function onKill(msg) {
     if (me.aiming) stopAim();
     me.reloading = false;
     $('reloadHint').classList.add('hidden');
-    me.killedBy = msg.kn;
+    me.killedBy = msg.killer === msg.victim ? 'Своя граната' : msg.kn;
     $('deathTitle').textContent = 'Вы погибли';
-    $('deathSub').textContent = `Убил: ${msg.kn}`;
+    $('deathSub').textContent = msg.killer === msg.victim ? 'Своя граната' : `Убил: ${msg.kn}`;
     $('death').classList.remove('hidden');
     playDeath();
   }
   const victim = S.players.get(msg.victim);
   if (victim) combat?.death({x:victim.group.position.x,y:victim.group.position.y+.7,z:victim.group.position.z});
-  if (msg.killer === S.id) {
+  if (msg.killer === S.id && msg.victim !== S.id) {
     const hm = $('hitmarker');
     hm.dataset.kind = 'kill';hm.classList.remove('show');void hm.offsetWidth;hm.classList.add('show');
     playKill();
@@ -1783,6 +1838,8 @@ function onRespawn(msg) {
   me.onGround = true;
   me.hp = 100;
   me.energy = 100;
+  me.grenades = msg.you.grenades ?? 2;
+  me.grenadeReadyAt = me.grenadeThrowAt = 0;
   me.sprinting = me.sprintExhausted = false;
   me.alive = true;
   refillAll();
@@ -1884,6 +1941,15 @@ function updateHud() {
   $('stamina').classList.toggle('sprinting', me.sprinting);
   $('stamina').classList.toggle('exhausted', me.sprintExhausted);
   setHudText($('sprintStatus'), me.sprintExhausted ? 'Отпусти Shift' : me.sprinting ? 'Спринт' : 'Shift · Спринт');
+
+  const grenadeReady = performance.now() >= me.grenadeReadyAt;
+  setHudText($('grenadeCount'), String(me.grenades));
+  setHudText($('grenadeStatus'), me.grenades === 0 ? 'До возрождения' : grenadeReady ? 'Граната' : 'Бросок…');
+  $('grenadeSlot').classList.toggle('empty', me.grenades === 0);
+  $('grenadeSlot').classList.toggle('cooldown', !grenadeReady);
+  const danger = me.alive ? grenadeEffects?.nearby(me) : null;
+  $('grenadeWarning').classList.toggle('hidden', !danger);
+  if (danger) setHudText($('grenadeWarning'), `Граната рядом · ${danger.fuse.toFixed(1)} с`);
 
   const w = currentWeapon();
   const ammo = w ? (me.ammo[me.weapon] ?? 0) : 0;
@@ -2052,7 +2118,8 @@ function addKillFeed(msg) {
 
   const skull = document.createElement('span');
   skull.className = 'skull';
-  skull.textContent = '💥';
+  skull.textContent = msg.w === 'grenade' ? '◉' : '💥';
+  skull.title = msg.w === 'grenade' ? 'Граната' : 'Выстрел';
 
   const v = document.createElement('span');
   v.textContent = msg.vn;
@@ -2133,6 +2200,7 @@ const Sound = {
     make('impact-hay',.14,(t,n)=>n*.6*Math.exp(-t*30));
     make('impact-dirt',.18,(t,n)=>n*.9*Math.exp(-t*24));
     make('impact-metal',.32,(t,n)=>(ring(t,1350)*.35+ring(t,2180)*.23+n*.15)*Math.exp(-t*14));
+    make('grenade-explosion',.8,(t,n)=>(n*.9+ring(t,60)*.5)*Math.exp(-t*8)*(1-Math.exp(-t*180)));
     make('farm-wind',3,(t,n)=>n*.18*(.65+.35*Math.sin(t*Math.PI*2/3))*Math.sin(t*Math.PI/3)**2);
     make('farm-hen',.7,(t,n)=>{
       const pulse=Math.max(0,Math.sin(t*31));
@@ -2161,11 +2229,11 @@ const Sound = {
     return true;
   },
 
-  stop(channel) {
-    for(const voice of this.voices)if(!channel||voice.channel===channel){voice.src.stop();this.voices.delete(voice);}
+  stop(channel, exceptChannel) {
+    for(const voice of this.voices)if((!channel||voice.channel===channel)&&voice.channel!==exceptChannel){voice.src.stop();this.voices.delete(voice);}
   },
 
-  thump(volume = 0.15, pan = 0) {
+  thump(volume = 0.15, pan = 0, channel = 'combat') {
     if (!this.ctx) return;
     const t0 = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
@@ -2176,7 +2244,7 @@ const Sound = {
     gain.gain.setValueAtTime(volume, t0);
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.13);
     osc.connect(gain).connect(this.master);
-    const voice={src:osc,channel:'combat'};this.voices.add(voice);
+    const voice={src:osc,channel};this.voices.add(voice);
     osc.onended=()=>{this.voices.delete(voice);osc.disconnect();gain.disconnect();};
     osc.start(t0);
     osc.stop(t0 + 0.15);
@@ -2275,21 +2343,20 @@ document.addEventListener('mousemove', (e) => {
 
 document.addEventListener('keydown', (e) => {
   Sound.resume();
-  if (e.code === 'Tab') {
-    e.preventDefault();
-    if (S.screen === 'hud') $('scorePanel').classList.remove('hidden');
-    return;
-  }
-  if (e.code === 'Space') {
-    e.preventDefault();
-    if (!e.repeat) jumpQueued = true;
-  }
-  S.keys[e.code] = true;
   if (e.code === 'Escape' && !$('settings').classList.contains('hidden')) {
     closeSettings();
     return;
   }
-
+  if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+  if (e.code === 'Tab') {
+    if (S.screen === 'hud') { e.preventDefault(); $('scorePanel').classList.remove('hidden'); }
+    return;
+  }
+  if (e.code === 'Space' && S.screen === 'hud' && S.locked) {
+    e.preventDefault();
+    if (!e.repeat) jumpQueued = true;
+  }
+  if (S.screen === 'hud' && S.locked) S.keys[e.code] = true;
   if (e.code === 'Escape' && S.screen === 'hud') openPause();
 
   if (e.code === 'F2') { e.preventDefault();levelView?.toggleDebug(); }
@@ -2301,7 +2368,8 @@ document.addEventListener('keydown', (e) => {
     updateFpsLabel();
   }
 
-  if (S.screen === 'hud') {
+  if (S.screen === 'hud' && S.locked) {
+    if (e.code === 'KeyG') { e.preventDefault(); if (!e.repeat) throwGrenade(); }
     if (e.code === 'KeyR') startReload();
     const m = /^(?:Digit|Numpad)([1-6])$/.exec(e.code);
     if (m) {
@@ -2316,7 +2384,7 @@ document.addEventListener('keyup', (e) => {
   if (e.code === 'Tab') $('scorePanel').classList.add('hidden');
 });
 
-window.addEventListener('blur', () => { S.keys = Object.create(null); S.firing = false; jumpQueued = false; });
+window.addEventListener('blur', () => { S.keys = Object.create(null); S.firing = false; jumpQueued = false; stopAim(); });
 
 canvas.addEventListener('mousedown', () => Sound.resume());
 
@@ -2358,6 +2426,7 @@ document.addEventListener('pointerlockchange', () => {
     if (!S.locked) {
       S.keys = Object.create(null);
       S.firing = false;
+      jumpQueued = false;
       if (S.me.aiming) stopAim();
     }
   }
@@ -2586,5 +2655,5 @@ $('boot')?.classList.add('hidden');
 /* ============================ отладка ============================ */
 
 if (new URLSearchParams(location.search).has('debug')) {
-  window.__egg = { S, fire: tryFire, tryFire, send, Sound, switchWeapon, startReload, setZoom, cycleWeapon, updateHud, settings: SETTINGS, getFootsteps: () => footstepCount, getLevelView: () => levelView?.inspect(), getCombat: () => ({...combat?.stats(), kick:recoil, muzzle:!!muzzle?.visible, pendingSounds:soundTimers.size, audio:Sound.events.slice(), hitReaction:Math.max(0,...[...S.players.values()].map(v=>v.hitReaction||0))}), quality: QUALITY, getFov: () => camera ? camera.fov : null, applyResolution, getInfo: () => renderer ? { ...renderer.info.render } : null };
+  window.__egg = { S, fire: tryFire, tryFire, throwGrenade, getGrenades: () => grenadeEffects?.stats(), send, Sound, switchWeapon, startReload, setZoom, cycleWeapon, updateHud, settings: SETTINGS, getFootsteps: () => footstepCount, getLevelView: () => levelView?.inspect(), getCombat: () => ({...combat?.stats(), kick:recoil, muzzle:!!muzzle?.visible, pendingSounds:soundTimers.size, audio:Sound.events.slice(), hitReaction:Math.max(0,...[...S.players.values()].map(v=>v.hitReaction||0))}), quality: QUALITY, getFov: () => camera ? camera.fov : null, applyResolution, getInfo: () => renderer ? { ...renderer.info.render } : null };
 }

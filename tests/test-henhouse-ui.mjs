@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {chromium} from '/Users/nikita/.nvm/versions/node/v24.14.0/lib/node_modules/@playwright/cli/node_modules/playwright-core/index.mjs';
+import {chromium} from 'playwright';
 const level=JSON.parse(fs.readFileSync(new URL('../public/henhouse_ffa_level.json',import.meta.url))),base=process.env.BASE||'http://127.0.0.1:3190';
 const mode=process.env.MODE||'blockout';
-const browser=await chromium.launch({executablePath:process.env.CHROMIUM||'/Users/nikita/Library/Caches/ms-playwright/chromium-1217/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',headless:true,args:['--no-sandbox','--enable-unsafe-swiftshader','--use-angle=swiftshader','--disable-background-timer-throttling','--disable-renderer-backgrounding']});
+const browser=await chromium.launch({executablePath: process.env.CHROMIUM || chromium.executablePath(),headless:true,args:['--no-sandbox','--enable-unsafe-swiftshader','--use-angle=swiftshader','--disable-background-timer-throttling','--disable-renderer-backgrounding']});
 try {
  const context=await browser.newContext({viewport:{width:1100,height:750}});context.setDefaultTimeout(15000);await context.route(/^https:\/\/(cdn.jsdelivr.net|esm.sh)\//,r=>r.abort());
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));

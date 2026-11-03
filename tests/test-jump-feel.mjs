@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { chromium } from '/Users/nikita/.nvm/versions/node/v24.14.0/lib/node_modules/@playwright/cli/node_modules/playwright-core/index.mjs';
+import { chromium } from 'playwright';
 
 const base = process.env.BASE || 'http://127.0.0.1:3191';
 const browser = await chromium.launch({
-  executablePath: process.env.CHROMIUM || '/Users/nikita/Library/Caches/ms-playwright/chromium-1217/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
+  executablePath: process.env.CHROMIUM || chromium.executablePath(),
   headless: true,
   args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
 });

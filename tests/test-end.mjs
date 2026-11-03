@@ -1,10 +1,9 @@
-import { chromium } from '/Users/nikita/.nvm/versions/node/v24.14.0/lib/node_modules/@playwright/cli/node_modules/playwright-core/index.mjs';
+import { chromium } from 'playwright';
 
-const EXE = '/Users/nikita/Library/Caches/ms-playwright/chromium-1217/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
 const BASE = process.env.BASE || 'http://127.0.0.1:3100';
 
 const browser = await chromium.launch({
-  executablePath: EXE,
+  executablePath: process.env.CHROMIUM || chromium.executablePath(),
   headless: true,
   args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--window-size=1280,800'],
 });

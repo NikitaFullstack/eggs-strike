@@ -4,7 +4,9 @@
   "description": "Онлайн-перестрелка яйцами: комнаты по коду, 3-4 игрока, 5 минут",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node scripts/test.mjs",
+    "test:browser": "node scripts/test.mjs --browser"
   },
   "keywords": ["game", "multiplayer", "threejs", "websocket"],
   "author": "",
@@ -16,5 +18,8 @@
   "dependencies": {
     "three": "^0.187.0",
     "ws": "^8.22.1"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1"
   }
 }

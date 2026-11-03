@@ -11,6 +11,7 @@ const LEVEL_DATA = require('./public/henhouse_ffa_level.json');
 const DEFAULT_MAP = Level.build(LEVEL_DATA);
 const TRAINING_MAP = require('./public/maps/training/map.json');
 const MeshWorld = require('./public/mesh-world.js');
+const Grenades = require('./public/grenade-physics.js');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -122,6 +123,7 @@ const server = http.createServer((req, res) => {
 
 const rooms = new Map(); // code -> room
 let nextId = 1;
+let nextGrenadeId = 1;
 
 function makeCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -146,6 +148,7 @@ function createRoom() {
     startedAt: 0,
     lastSnapshot: 0,
     snapshots: [],
+    grenades: [],
   };
   rooms.set(code, room);
   return room;
@@ -196,11 +199,13 @@ function placeAtSpawn(room,p) {
   p.hp=100;p.alive=true;p.respawnAt=0;
   p.spawnedAt=Date.now();
   p.immuneUntil=Date.now()+MAPS[room.mapId].spawnRules.initialImmunitySeconds*1000;
+  p.grenades=Grenades.CONFIG.count;
+  p.lastGrenade=0;
 }
 
 function respawnPlayer(room, p) {
   placeAtSpawn(room,p);
-  send(p.ws,{t:'respawn',you:{x:p.x,y:p.y,z:p.z,yaw:p.yaw,pitch:p.pitch}});
+  send(p.ws,{t:'respawn',you:{x:p.x,y:p.y,z:p.z,yaw:p.yaw,pitch:p.pitch,grenades:p.grenades}});
 }
 
 function pickSpawn(room, player) {
@@ -241,6 +246,7 @@ function startMatch(room) {
   room.startedAt = Date.now();
   room.lastSnapshot = 0;
   room.snapshots = [];
+  room.grenades = [];
 
   const map = MAPS[room.mapId] || DEFAULT_MAP;
   const list = [...room.players.values()];
@@ -252,7 +258,7 @@ function startMatch(room) {
       t: 'start',
       timeLeft: MATCH_TIME,
       round: room.round,
-      you: { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch:p.pitch },
+      you: { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch:p.pitch, grenades:p.grenades },
       arena: map,
       mapName: map.name,
       weapons: WEAPONS,
@@ -269,6 +275,7 @@ function endMatch(room) {
   if (room.timer) clearInterval(room.timer);
   room.timer = null;
   room.state = 'results';
+  room.grenades = [];
   const scores = [...room.players.values()]
     .map((p) => ({ i: p.id, n: p.name, c: p.color, k: p.kills, d: p.deaths }))
     .sort((a, b) => b.k - a.k || a.d - b.d);
@@ -288,6 +295,8 @@ function tickRoomInner(room) {
   const dt = 0.05;
   room.timeLeft = Math.max(0, room.timeLeft - dt);
 
+  tickGrenades(room, now);
+
   // респавны
   for (const p of room.players.values()) {
     const map = MAPS[room.mapId];
@@ -301,9 +310,11 @@ function tickRoomInner(room) {
       t: 's',
       at: now,
       tl: Math.round(room.timeLeft * 10) / 10,
+      g: room.grenades.map(grenade => publicGrenade(grenade, now)),
       p: [...room.players.values()].map((p) => ({
         i: p.id, x: r2(p.x), y: r2(p.y), z: r2(p.z), yaw: r2(p.yaw), p: r2(p.pitch),
         hp: Math.round(p.hp), a: p.alive ? 1 : 0, im:p.immuneUntil>now?1:0, k: p.kills, d: p.deaths,
+        grenades: p.grenades,
       })),
     };
     room.snapshots.push(snapshot);
@@ -316,6 +327,58 @@ function tickRoomInner(room) {
 }
 
 const r2 = (n) => Math.round(n * 100) / 100;
+
+/* ---------- гранаты ---------- */
+
+function publicGrenade(grenade, now = Date.now()) {
+  return { id: grenade.id, owner: grenade.owner, x: r2(grenade.x), y: r2(grenade.y), z: r2(grenade.z), fuse: Math.max(0, r2((grenade.expiresAt-now)/1000)) };
+}
+
+function handleGrenade(room, player, message) {
+  if (room.state !== 'playing' || !player.alive || player.inLobby || player.grenades <= 0) return;
+  const now = Date.now();
+  if (now-player.lastGrenade < Grenades.CONFIG.cooldown) return;
+  if (![message.dx,message.dy,message.dz].every(value => typeof value === 'number' && Number.isFinite(value))) return;
+  const length = Math.hypot(message.dx,message.dy,message.dz);
+  if (!Number.isFinite(length) || length < .001) return;
+  const direction = {x:message.dx/length,y:message.dy/length,z:message.dz/length};
+  const origin = {x:player.x,y:player.y+EYE_HEIGHT-.1,z:player.z};
+  const grenade = Grenades.create(MAPS[room.mapId],origin,direction,nextGrenadeId++,player.id,now);
+  player.lastGrenade = now;
+  player.grenades--;
+  room.grenades.push(grenade);
+  broadcast(room,{t:'grenade',...publicGrenade(grenade,now),remaining:player.grenades});
+}
+
+function tickGrenades(room, now) {
+  for (let index = room.grenades.length-1; index >= 0; index--) {
+    const grenade = room.grenades[index];
+    const map = MAPS[room.mapId];
+    Grenades.advanceTo(grenade,map,now);
+    if (now < grenade.expiresAt) continue;
+    room.grenades.splice(index,1);
+    broadcast(room,{t:'explosion',id:grenade.id,owner:grenade.owner,x:r2(grenade.x),y:r2(grenade.y),z:r2(grenade.z),radius:Grenades.CONFIG.radius});
+    const owner = room.players.get(grenade.owner);
+    if (!owner) continue;
+    for (const victim of room.players.values()) {
+      if (!victim.alive || victim.inLobby || grenade.expiresAt < victim.spawnedAt || grenade.expiresAt < victim.immuneUntil) continue;
+      const damage = Grenades.damage(map,grenade,victim);
+      if (damage) damagePlayer(room,owner,victim,damage,'grenade',now);
+    }
+  }
+}
+
+function damagePlayer(room, attacker, victim, damage, weapon, now) {
+  if (!victim.alive) return;
+  victim.hp = Math.max(0,victim.hp-damage);
+  broadcast(room,{t:'hit',from:attacker.id,to:victim.id,dmg:damage,hp:Math.round(victim.hp),w:weapon});
+  if (victim.hp > 0) return;
+  victim.alive = false;
+  victim.deaths++;
+  victim.respawnAt = now+RESPAWN_DELAY*1000;
+  if (attacker.id !== victim.id) attacker.kills++;
+  broadcast(room,{t:'kill',killer:attacker.id,victim:victim.id,kn:attacker.name,kc:attacker.color,vn:victim.name,vc:victim.color,w:weapon});
+}
 
 /* ---------- столкновения луча ---------- */
 
@@ -523,34 +586,7 @@ function handleShoot(room, p, msg) {
   broadcast(room, {t:'shot',i:p.id,w:w.id,origin:o,rays});
 
   for (const [victim, dmg] of damage) {
-    if (!victim.alive) continue;
-    victim.hp -= dmg;
-
-    broadcast(room, {
-      t: 'hit',
-      from: p.id,
-      to: victim.id,
-      dmg,
-      hp: Math.max(0, Math.round(victim.hp)),
-    });
-
-    if (victim.hp <= 0) {
-      victim.alive = false;
-      victim.hp = 0;
-      victim.deaths += 1;
-      victim.respawnAt = now + RESPAWN_DELAY * 1000;
-      p.kills += 1;
-      broadcast(room, {
-        t: 'kill',
-        killer: p.id,
-        victim: victim.id,
-        kn: p.name,
-        kc: p.color,
-        vn: victim.name,
-        vc: victim.color,
-        w: w.id,
-      });
-    }
+    damagePlayer(room,p,victim,dmg,w.id,now);
   }
 }
 
@@ -578,6 +614,7 @@ wss.on('connection', (ws) => {
     const p = room.players.get(ws.playerId);
     if (!p) return;
     room.players.delete(p.id);
+    room.grenades = room.grenades.filter(grenade => grenade.owner !== p.id);
 
     if (room.players.size === 0) {
       if (room.timer) clearInterval(room.timer);
@@ -617,6 +654,7 @@ function onMessage(ws, msg) {
       x: 0, y: 0, z: 0, yaw: 0, pitch: 0,
       hp: 100, alive: true, inLobby: false, kills: 0, deaths: 0,
       respawnAt: 0, lastShot: 0,
+      grenades: Grenades.CONFIG.count, lastGrenade: 0,
     };
     room.players.set(id, player);
     if (!room.hostId) room.hostId = id;
@@ -649,7 +687,7 @@ function onMessage(ws, msg) {
         t: 'start',
         timeLeft: room.timeLeft,
         round: room.round,
-        you: { x: player.x, y: player.y, z: player.z, yaw: player.yaw, pitch:player.pitch },
+        you: { x: player.x, y: player.y, z: player.z, yaw: player.yaw, pitch:player.pitch, grenades:player.grenades },
         arena: map,
         mapName: map.name,
         weapons: WEAPONS,
@@ -688,11 +726,16 @@ function onMessage(ws, msg) {
       handleShoot(room, p, msg);
       break;
     }
+    case 'grenade': {
+      handleGrenade(room,p,msg);
+      break;
+    }
     case 'lobby': {
       if (room.state === 'playing') {
         p.inLobby = true;
         p.alive = false;
         p.respawnAt = 0;
+        room.grenades = room.grenades.filter(grenade => grenade.owner !== p.id);
       }
       broadcastLobby(room);
       break;
@@ -700,7 +743,7 @@ function onMessage(ws, msg) {
     case 'resume': {
       if (room.state !== 'playing' || !p.inLobby) return;
       placeAtSpawn(room,p);
-      const spawn={x:p.x,y:p.y,z:p.z,yaw:p.yaw,pitch:p.pitch};
+      const spawn={x:p.x,y:p.y,z:p.z,yaw:p.yaw,pitch:p.pitch,grenades:p.grenades};
       p.inLobby = false;
       p.lastShot = 0;
       const map = MAPS[room.mapId];

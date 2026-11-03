@@ -574,6 +574,45 @@ input::placeholder { color: rgba(255, 255, 255, 0.28); font-weight: 600; }
 
 .ammo.empty { color: var(--danger); }
 
+.grenade-slot {
+  position: absolute;
+  right: 20px;
+  bottom: 86px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 175px;
+  padding: 10px 12px;
+  border: 1px solid #d9ff5650;
+  border-radius: 12px;
+  background: rgba(8, 10, 16, .78);
+  color: #d9ff56;
+}
+.grenade-slot kbd { border: 1px solid #ffffff40; border-radius: 4px; padding: 3px 6px; font-family: inherit; font-size: 12px; font-weight: 700; color: #fff; }
+.grenade-slot span { flex: 1; font-size: 11px; color: #dce3cf; }
+.grenade-slot strong { font-size: 22px; }
+.grenade-slot.empty { color: #939c9c; border-color: #ffffff20; }
+.grenade-slot.cooldown { opacity: .65; }
+.grenade-warning {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 65px);
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border: 1px solid #ff855a;
+  border-radius: 7px;
+  color: #ffe4cd;
+  background: #5a211be8;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.pause-controls { color: #b0bbb4; text-align: center; line-height: 1.8; margin-top: 12px; }
+@media (max-width: 760px) {
+  .grenade-slot { right: 12px; bottom: 145px; min-width: 0; gap: 7px; padding: 8px; }
+  .grenade-slot span { display: none; }
+}
+
 .score-panel {
   position: fixed;
   inset: 0;
@@ -929,7 +968,7 @@ input::placeholder { color: rgba(255, 255, 255, 0.28); font-weight: 600; }
 .weapon-toast {
   position: absolute;
   left: 50%;
-  bottom: 96px;
+  bottom: 130px;
   transform: translateX(-50%) translateY(8px);
   font-weight: 900;
   font-size: 15px;
