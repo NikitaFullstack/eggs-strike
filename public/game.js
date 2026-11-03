@@ -206,7 +206,8 @@ function renderLobbyPlayers() {
     list.append(li);
   }
 
-  $('playerCount').textContent = `${S.lobbyPlayers.length}/${LEVEL_DATA.players.max}`;
+  const map = MAP_OPTIONS.find(map => map.id === S.mapId);
+  $('playerCount').textContent = `${S.lobbyPlayers.length}/${map?.players?.max || LEVEL_DATA.players.max}`;
   const isHost = S.id === S.hostId;
   const playing = S.roomState === 'playing';
   $('btnStart').classList.toggle('hidden', !isHost || playing);
@@ -217,7 +218,7 @@ function renderLobbyPlayers() {
   renderMapSelection();
 }
 
-const MAP_OPTIONS = [{ id: LEVEL_DATA.mapId, name: LEVEL_DATA.displayName }, TRAINING_MAP];
+const MAP_OPTIONS = [DEFAULT_ARENA, TRAINING_MAP, ...EggHouseholdMaps.maps];
 
 function initMapSelection() {
   for (const containerId of ['menuMaps', 'roomMaps']) {
@@ -226,12 +227,14 @@ function initMapSelection() {
       button.className = 'map-card';
       button.dataset.map = map.id;
       button.setAttribute('aria-label', map.name);
-      button.innerHTML = `<img src="${map.preview || 'data:image/svg+xml,'+encodeURIComponent(EggHenhouse.preview(LEVEL_DATA))}" alt="" /><span class="map-check" aria-hidden="true">✓</span><span class="map-card-copy"><strong>${map.name}</strong></span>`;
+      const preview = map.preview || 'data:image/svg+xml,' + encodeURIComponent(map.household ? EggHouseholdMaps.preview(map) : EggHenhouse.preview(LEVEL_DATA));
+      button.innerHTML = `<img src="${preview}" alt="" /><span class="map-check" aria-hidden="true">✓</span><span class="map-card-copy"><strong>${map.name}</strong><small>До ${map.players?.max || LEVEL_DATA.players.max} игроков</small></span>`;
       button.addEventListener('click', () => {
         if (S.screen === 'menu') {
           S.mapId = map.id;
           renderMapSelection();
         } else if (S.id === S.hostId) {
+          $('lobbyMsg').textContent = '';
           send({ t: 'map', id: map.id });
         }
       });
@@ -243,10 +246,15 @@ function initMapSelection() {
 
 function renderMapSelection() {
   for (const button of document.querySelectorAll('.map-card')) {
+    const map = MAP_OPTIONS.find(map => map.id === button.dataset.map);
+    const tooSmall = S.screen === 'lobby' && S.lobbyPlayers.length > (map.players?.max || LEVEL_DATA.players.max);
     button.setAttribute('aria-pressed', String(button.dataset.map === S.mapId));
-    button.disabled = S.screen === 'lobby' && (S.id !== S.hostId || S.roomState === 'playing');
+    button.disabled = S.screen === 'lobby' && (S.id !== S.hostId || S.roomState === 'playing' || tooSmall);
+    button.title = tooSmall ? 'Для этой карты в комнате должно быть не больше 3 игроков' : '';
   }
-  $('mapHint').textContent = S.mapId === TRAINING_MAP.id ? '69 × 69 м' : '';
+  const selected = MAP_OPTIONS.find(map => map.id === S.mapId) || DEFAULT_ARENA;
+  $('mapHint').textContent = `${Math.round(selected.halfX * 2)} × ${Math.round(selected.halfZ * 2)} м`;
+  $('matchDescription').textContent = `До ${selected.players?.max || LEVEL_DATA.players.max} игроков · 5 минут`;
 }
 
 function updateLobbyIdentity() {
@@ -592,9 +600,20 @@ function makeClouds() {
 }
 
 function buildArena(arena) {
+  arenaGroup.userData.mapId = arena.id;
+  const cold = arena.household === 'fridge';
+  const sun = scene.children.find(o => o.isDirectionalLight);
+  sun.color.set(cold ? 0xe7f5ff : 0xffe1a0);
+  sun.intensity = arena.household ? 1.35 : 1.85;
+  const hemi = scene.children.find(o => o.isHemisphereLight);
+  hemi.color.set(cold ? 0xe2f4ff : 0xfff4df);
+  hemi.groundColor.set(cold ? 0x708e9a : 0x7a6749);
+  hemi.intensity = arena.household ? 1.45 : 1.2;
   arenaGroup.add(makeSky(arena.theme));
-  arenaGroup.add(makeClouds());
-  levelView = arena.mesh
+  if (!arena.household) arenaGroup.add(makeClouds());
+  levelView = arena.household
+    ? EggHouseholdWorld.build(THREE, arena, arenaGroup, worldMeshes)
+    : arena.mesh
     ? EggMeshWorld.build(THREE, TRAINING_SCENE, TRAINING_TEXTURE, arenaGroup, worldMeshes, arena)
     : globalThis.EggCoopWorld.build(THREE, arena, arenaGroup, worldMeshes);
 }
@@ -1059,7 +1078,7 @@ function startGame(msg) {
   if (scene) clearRemotes();
   if (!scene) {
     initThree(arena);
-  } else if (S.arena.id !== arena.id) {
+  } else if (arenaGroup.userData.mapId !== arena.id) {
     const textures = new Set();
     arenaGroup.traverse(o => {
       o.geometry?.dispose();
@@ -2027,7 +2046,7 @@ function drawMinimap() {
   }
 
   for (const cr of [...S.arena.crates, ...S.arena.platforms || [], ...S.arena.ramps || [], ...S.arena.stairs || []]) {
-    if (cr.type === 'beam') continue;
+    if (cr.type === 'beam' || cr.minimap === false) continue;
     g.fillStyle = cr.type === 'hay' ? '#d8b45f' : cr.type === 'barn' ? '#a05b48' : 'rgba(192, 155, 100, .5)';
     g.fillRect(
       px(cr.x - cr.w / 2),
@@ -2196,6 +2215,7 @@ const Sound = {
     const ring=(t,f)=>Math.sin(t*f*Math.PI*2);
     make('step-wood',.22,(t,n)=>(ring(t,145)*.5+ring(t,330)*.18+n*.3)*Math.exp(-t*28));
     make('step-dirt',.2,(t,n)=>(n*.95+ring(t,72)*.13)*Math.exp(-t*23));
+    make('step-tile',.16,(t,n)=>(ring(t,430)*.3+ring(t,910)*.1+n*.25)*Math.exp(-t*38));
     make('impact-wood',.16,(t,n)=>(n*.7+ring(t,240)*.35)*Math.exp(-t*36));
     make('impact-hay',.14,(t,n)=>n*.6*Math.exp(-t*30));
     make('impact-dirt',.18,(t,n)=>n*.9*Math.exp(-t*24));
@@ -2207,6 +2227,7 @@ const Sound = {
       return (ring(t,430+Math.sin(t*31)*70)*.32+n*.15)*pulse**5*Math.sin(t*Math.PI/.7);
     });
     make('farm-creak',.65,(t,n)=>(ring(t,180+Math.sin(t*8)*60)*.18+n*.12)*Math.sin(t*Math.PI/.65));
+    make('fridge-hum',4,t=>(ring(t,60)*.12+ring(t,120)*.025)*(.9+.1*Math.sin(t*Math.PI/2)));
   },
 
   play(name, { volume = .5, rate = 1, pan = 0, lowpass = 0, loop = false, channel = 'combat' } = {}) {
@@ -2304,6 +2325,7 @@ function soundPosition(point) {
 }
 
 function footMaterial(x,y,z) {
+  if (S.arena?.household) return S.arena.household === 'fridge' ? 'tile' : 'wood';
   if (!S.arena || y < .2) return 'dirt';
   const floor = ArenaGeometry.groundHeight(S.arena,x,z,y+.15);
   return Math.abs(floor-y)<.2 && floor>.2 ? 'wood' : 'dirt';
@@ -2311,6 +2333,11 @@ function footMaterial(x,y,z) {
 
 function updateAmbience() {
   if (performance.now() < ambientAt || !Sound.ready) return;
+  if (S.arena?.household) {
+    if (!ambientAt && S.arena.household === 'fridge') Sound.play('fridge-hum', {volume:.12,loop:true,channel:'ambient'});
+    ambientAt = Infinity;
+    return;
+  }
   if (!ambientAt) Sound.play('farm-wind', {volume:.035,loop:true,channel:'ambient'});
   else Sound.play(Math.random()<.6?'farm-hen':'farm-creak',{volume:.055,pan:(Math.random()-.5)*1.4,channel:'ambient'});
   ambientAt = performance.now() + 9000 + Math.random()*6000;

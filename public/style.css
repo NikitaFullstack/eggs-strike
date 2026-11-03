@@ -1200,7 +1200,7 @@ input::placeholder { color: rgba(255, 255, 255, 0.28); font-weight: 600; }
 .maps-heading h2 { margin: 0; font-size: 10px; letter-spacing: 1.6px; }
 .maps-heading h2 span { color: #778376; margin-left: 8px; }
 .maps-heading p { margin: 0; font-size: 10px; color: #99a396; }
-.map-grid { display: grid; max-width: 360px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.map-grid { display: grid; max-width: 740px; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .map-card { position: relative; display: block; height: 138px; overflow: hidden; padding: 0; border: 1px solid #bdd4b52c; border-radius: 4px; background: #1b2728; color: white; text-align: left; font: inherit; cursor: pointer; pointer-events: auto; transition: border-color .18s, transform .18s; }
 .map-card:hover:not(:disabled) { transform: translateY(-3px); border-color: #d9ff5680; }
 .map-card[aria-pressed="true"] { border-color: var(--yellow); box-shadow: 0 0 0 1px var(--yellow); }
@@ -1214,6 +1214,7 @@ input::placeholder { color: rgba(255, 255, 255, 0.28); font-weight: 600; }
 .map-card-copy strong { display: block; font-size: 18px; letter-spacing: -.5px; margin-bottom: 4px; }
 .map-card-copy small { display: block; font-size: 9px; color: #c1cbbc; }
 .map-card:disabled { cursor: default; }
+.map-card:disabled:not([aria-pressed="true"]) { opacity: .65; }
 .lobby-footer { position: absolute; left: 40px; right: 40px; bottom: 18px; display: flex; justify-content: space-between; font-size: 8px; letter-spacing: 1px; color: #acb8a5; }
 .lobby-footer b { font-weight: 400; color: #677565; margin-left: 4px; }
 .footer-dot { margin: 0 12px; color: #60715b; }
@@ -1222,13 +1223,14 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--yellow); outlin
 @media (min-width: 1600px) { .menu-bottom, .room-controls { right: 60px; width: 370px; } .hero-copy, .lobby-header { left: 60px; } .menu-bottom { top: 190px; } .map-card { height: 170px; } }
 @media (max-height: 760px) and (min-width: 761px) { .hero-copy { top: 110px; } .menu-bottom { top: 135px; } .room-controls { top: 90px; padding: 18px; } #lobby .player-list { max-height: 100px; } .map-card { height: 108px; } .character-label { top: 64%; } }
 @media (max-width: 1000px) and (min-width: 761px) { .hero-copy h1 { font-size: 28px; } .hero-copy p { max-width: 180px; } .menu-bottom, .room-controls { right: 24px; width: 290px; } .hero-copy { left: 24px; } .lobby-header { left: 24px; right: 24px; } .header-caption { display: none; } }
+@media (min-width: 761px) and (max-width: 1200px) { .map-grid { max-width: 340px; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) {
   .lobby-header { top: 18px; left: 20px; right: 20px; height: 34px; }
   .brand { font-size: 18px; }.brand-mark { width: 32px; height: 32px; font-size: 27px; }
   .header-caption, .hero-copy, .online-label, .character-sub, .lobby-footer, .maps-heading p { display: none; }
   #menu .menu-side { top: 17px; right: 20px; gap: 4px; } #menu .menu-side .btn { font-size: 10px; }
   #btnFullscreen { max-width: 140px; }
-  .menu-bottom { top: auto; bottom: 225px; left: 20px; right: 20px; width: auto; }
+  .menu-bottom { top: auto; bottom: 270px; left: 20px; right: 20px; width: auto; }
   .menu-controls { padding: 18px; width: 100%; }
   .menu-controls h2 { font-size: 20px; margin: 12px 0 6px; }
   .panel-description { margin-bottom: 16px; font-size: 10px; }
@@ -1238,14 +1240,14 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--yellow); outlin
   .map-section { bottom: 20px; left: 20px; right: 20px; }
   .maps-heading { margin-bottom: 10px; }.maps-heading h2 { font-size: 8px; }
   .map-grid { gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .map-card { height: 145px; }.map-card-copy { bottom: 8px; left: 9px; }.map-card-copy strong { font-size: 15px; margin-bottom: 2px; }.map-card-copy small { font-size: 8px; }.map-number { display: none; }.map-check { top: 6px; right: 7px; width: 14px; height: 14px; font-size: 9px; }
-  .room-controls { top: auto; bottom: 225px; left: 20px; right: 20px; width: auto; padding: 16px; }
+  .map-card { height: 94px; }.map-card-copy { bottom: 8px; left: 9px; }.map-card-copy strong { font-size: 15px; margin-bottom: 2px; }.map-card-copy small { font-size: 8px; }.map-number { display: none; }.map-check { top: 6px; right: 7px; width: 14px; height: 14px; font-size: 9px; }
+  .room-controls { top: auto; bottom: 270px; left: 20px; right: 20px; width: auto; padding: 16px; }
   #lobby .player-list { max-height: 86px; margin-bottom: 10px; } #lobby .invite-row { margin-bottom: 12px; }
   #lobby .code-box { margin-top: 3px; } #lobbyCode { font-size: 32px; }
   #lobby .lobby-sub { display: none; } #lobby .code-box .btn { height: 30px; }
   #menu:has(.play-open) ~ .lobby-showcase .character-label { display: none; }
 }
-@media (max-height: 720px) and (max-width: 760px) { .character-label { top: 25%; } .panel-description { display: none; } .menu-controls h2 { margin: 0 0 10px; } .room-controls { padding: 12px; } #lobby .player-list { max-height: 56px; } }
+@media (max-height: 720px) and (max-width: 760px) { .character-label { top: 25%; } .panel-description { display: none; } .menu-controls h2 { margin: 0 0 10px; } .room-controls { padding: 12px; } #lobby .player-list { max-height: 56px; } .map-card { height: 72px; } .menu-bottom, .room-controls { bottom: 216px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 
 .hitmarker[data-kind="kill"] { filter: drop-shadow(0 0 5px #ffd23f); }

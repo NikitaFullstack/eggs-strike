@@ -22,7 +22,7 @@ try {
   host.send({ t: 'create', name: 'Map host', mapId: 'training_grounds' });
   const joined = await host.wait(message => message.t === 'joined');
   assert.equal(joined.mapId, 'training_grounds', 'The server must register the imported map');
-  assert.deepEqual(joined.maps.map(map => map.id).sort(), ['henhouse_ffa_01', 'training_grounds']);
+  assert.deepEqual(joined.maps.map(map => map.id).sort(), ['henhouse_ffa_01', 'kitchen', 'refrigerator', 'training_grounds']);
   for (const guest of guests) { guest.send({ t: 'join', code: joined.code, name: 'Map guest' }); guest.id = (await guest.wait(message => message.t === 'joined')).id; }
   host.send({ t: 'start' });
   const starts = await Promise.all(clients.map(client => client.wait(message => message.t === 'start')));

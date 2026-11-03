@@ -10,6 +10,7 @@ const Level = require('./public/henhouse-level.js');
 const LEVEL_DATA = require('./public/henhouse_ffa_level.json');
 const DEFAULT_MAP = Level.build(LEVEL_DATA);
 const TRAINING_MAP = require('./public/maps/training/map.json');
+const HouseholdMaps = require('./public/household-maps.js');
 const MeshWorld = require('./public/mesh-world.js');
 const Grenades = require('./public/grenade-physics.js');
 
@@ -33,9 +34,15 @@ const WEAPONS = {
 
 const COLORS = ['#ffd23f', '#4fc3f7', '#ff6f91', '#9be564', '#ffa94d', '#b197fc', '#63e6be', '#ff8787'];
 
-const MAPS = { [DEFAULT_MAP.id]: DEFAULT_MAP, [TRAINING_MAP.id]: TRAINING_MAP };
+const MAPS = Object.fromEntries([DEFAULT_MAP, TRAINING_MAP, ...HouseholdMaps.maps].map(map => [map.id, map]));
 
-const MAP_LIST = Object.values(MAPS).map((m) => ({ id: m.id, name: m.name }));
+const mapCapacity = map => map.players?.max || MAX_PLAYERS;
+const MAP_LIST = Object.values(MAPS).map(m => ({ id: m.id, name: m.name, maxPlayers: mapCapacity(m) }));
+
+function impactMaterial(type, household) {
+  if (household && ['metal', 'tin', 'plastic', 'tile', 'deck'].includes(type)) return 'metal';
+  return type === 'hay' ? 'hay' : 'wood';
+}
 
 const colliderCache = new Map();
 
@@ -46,7 +53,7 @@ function mapColliders(map) {
   for (const b of ArenaGeometry.boxes(map)) list.push({
     min:{x:b.x-b.w/2,y:b.y||0,z:b.z-b.d/2},
     max:{x:b.x+b.w/2,y:(b.y||0)+b.h,z:b.z+b.d/2},
-    material: b.type === 'hay' ? 'hay' : 'wood',
+    material: impactMaterial(b.type, map.household),
   });
 
   colliderCache.set(map.id, list);
@@ -180,6 +187,7 @@ function lobbyState(room) {
     hostId: room.hostId,
     state: room.state,
     mapId: room.mapId,
+    maxPlayers: mapCapacity(MAPS[room.mapId]),
     players: [...room.players.values()].map(publicPlayer),
   };
 }
@@ -545,18 +553,18 @@ function handleShoot(room, p, msg) {
 
     for (const r of MAPS[room.mapId].ramps || []) {
       const hit = rayRamp(o, dir, r);
-      if (hit.t < blockT) { blockT = hit.t; material = 'wood'; normal = hit.normal; }
+      if (hit.t < blockT) { blockT = hit.t; material = map.household === 'fridge' ? 'metal' : 'wood'; normal = hit.normal; }
     }
 
     for (const solid of MAPS[room.mapId].rounds) {
       const t = ArenaGeometry.rayRound(o, dir, solid);
-      if (t < blockT) { blockT = t; material = solid.type === 'feeder' ? 'metal' : 'wood'; normal = roundNormal(solid,{x:o.x+dir.x*t,y:o.y+dir.y*t,z:o.z+dir.z*t}); }
+      if (t < blockT) { blockT = t; material = solid.type === 'feeder' ? 'metal' : impactMaterial(solid.type, map.household); normal = roundNormal(solid,{x:o.x+dir.x*t,y:o.y+dir.y*t,z:o.z+dir.z*t}); }
     }
 
     if (dir.y < 0 && !map.mesh) {
       const t = -o.y / dir.y;
       if (t >= 0 && t < blockT && Math.abs(o.x+dir.x*t)<=map.halfX && Math.abs(o.z+dir.z*t)<=map.halfZ) {
-        blockT = t; material = 'dirt'; normal = {x:0,y:1,z:0};
+        blockT = t; material = map.household ? (map.household === 'fridge' ? 'metal' : 'wood') : 'dirt'; normal = {x:0,y:1,z:0};
       }
     }
 
@@ -645,7 +653,7 @@ function onMessage(ws, msg) {
     } else {
       room = rooms.get(code);
       if (!room) return send(ws, { t: 'error', msg: 'Комната не найдена' });
-      if (room.players.size >= MAX_PLAYERS) return send(ws, { t: 'error', msg: 'Комната заполнена' });
+      if (room.players.size >= mapCapacity(MAPS[room.mapId])) return send(ws, { t: 'error', msg: 'Комната заполнена' });
     }
 
     const id = nextId++;
@@ -679,7 +687,7 @@ function onMessage(ws, msg) {
       maps: MAP_LIST,
       mapId: room.mapId,
       weapons: WEAPONS,
-      maxPlayers: MAX_PLAYERS,
+      maxPlayers: mapCapacity(map),
     });
 
     if (room.state === 'playing') {
@@ -759,6 +767,7 @@ function onMessage(ws, msg) {
       if (p.id !== room.hostId) return;
       if (room.state === 'playing') return;
       if (!Object.hasOwn(MAPS, msg.id)) return;
+      if (room.players.size > mapCapacity(MAPS[msg.id])) return send(ws, { t: 'error', msg: `Карта «${MAPS[msg.id].name}» рассчитана на ${mapCapacity(MAPS[msg.id])} игроков. Сейчас в комнате ${room.players.size}.` });
       room.mapId = msg.id;
       broadcastLobby(room);
       break;

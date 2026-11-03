@@ -7,6 +7,8 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const serverTests = [
   'test-map-layout.mjs',
   'test-map-navigation.mjs',
+  'test-household-maps.mjs',
+  'test-household-server.mjs',
   'test-coop-geometry.mjs',
   'test-mesh-world.mjs',
   'test-henhouse-level.mjs',
@@ -16,7 +18,7 @@ const serverTests = [
   'test-hit-rewind.mjs',
   'test-grenades.mjs',
 ];
-const browserTests = ['test-ui-copy.mjs', 'test-training-map.mjs', 'test-grenade-ui.mjs', 'test-ramp-descent.mjs'];
+const browserTests = ['test-ui-copy.mjs', 'test-training-map.mjs', 'test-grenade-ui.mjs', 'test-ramp-descent.mjs', 'test-household-ui.mjs'];
 const args = process.argv.slice(2);
 const requested = args.filter(arg => arg !== '--browser');
 const tests = requested.length ? requested : (args.includes('--browser') ? browserTests : serverTests).map(name => `tests/${name}`);

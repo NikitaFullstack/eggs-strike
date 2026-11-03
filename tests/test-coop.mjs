@@ -13,11 +13,11 @@ try {
   const host=await hostContext.newPage(),guest=await guestContext.newPage();
   for (const page of [host,guest]) page.on('pageerror',e=>errors.push(e.message));
   await host.goto(base+'/?debug=1'); await host.waitForFunction(()=>!!window.__egg);
-  assert.equal(await host.locator('#menuMaps [data-map]').count(),2,'The imported map is available alongside the reference henhouse');
-  assert.deepEqual(await host.locator('#menuMaps .map-card-copy').allTextContents(),['Курятник','Полигон']);
+  assert.equal(await host.locator('#menuMaps [data-map]').count(),4,'All four arenas are available');
+  assert.deepEqual(await host.locator('#menuMaps .map-card-copy strong').allTextContents(),['Курятник','Полигон','Холодильник','Кухня']);
   await host.fill('#name','Хост'); await host.click('#btnPlay'); await host.click('#btnCreate');
   await host.waitForSelector('#lobby:not(.hidden)');
-  assert.equal(await host.locator('#roomMaps [data-map]').count(),2);
+  assert.equal(await host.locator('#roomMaps [data-map]').count(),4);
   const code=await host.locator('#lobbyCode').textContent();
   await guest.goto(`${base}/?room=${code}&autojoin=1&debug=1`);
   await guest.waitForSelector('#lobby:not(.hidden)');
@@ -71,5 +71,5 @@ try {
   await host.screenshot({path:'/tmp/egg-coop-lobby-mobile.png'});
   await host.click('#btnLeave'); await host.waitForSelector('#menu:not(.hidden)');
   assert.deepEqual(errors,[]);
-  console.log('PASS: henhouse with two map options; two players; 20×16 bounds; climb; ground underpass; ceiling; solid feeder; exit');
+  console.log('PASS: henhouse with four map options; two players; 20×16 bounds; climb; ground underpass; ceiling; solid feeder; exit');
 } finally { await browser.close(); }

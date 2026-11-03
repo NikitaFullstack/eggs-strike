@@ -20,7 +20,7 @@ try {
   await checkCopy();
   await page.fill('#name','Игрок');
   assert.equal(await page.locator('#characterLabel').innerText(),'Игрок','Character label contains only the player name');
-  assert.deepEqual(await page.locator('#menuMaps .map-card-copy').allTextContents(),['Курятник','Полигон'],'Both map cards contain simple names');
+  assert.deepEqual(await page.locator('#menuMaps .map-card-copy strong').allTextContents(),['Курятник','Полигон','Холодильник','Кухня'],'All four maps are available with clear names');
   await page.screenshot({path:'/tmp/egg-copy-menu.png'});
   await page.click('#btnPlay'); await page.click('#btnCreate');
   await page.waitForSelector('#lobby:not(.hidden)');
@@ -38,7 +38,7 @@ try {
   await page.setViewportSize({width:390,height:844});
   await checkCopy();
   const maps=await page.locator('#roomMaps').boundingBox(),controls=await page.locator('.room-controls').boundingBox();
-  assert.ok(maps.y>=controls.y+controls.height,'Two map cards must not cover the room controls on mobile');
+  assert.ok(maps.y>=controls.y+controls.height,'Four map cards must not cover the room controls on mobile');
   await page.screenshot({path:'/tmp/egg-copy-mobile.png'});
   await page.click('#btnLeave');
   await page.waitForSelector('#menu:not(.hidden)');
@@ -46,5 +46,5 @@ try {
   assert.equal(new URL(page.url()).searchParams.has('room'),false);
   await checkCopy();
   assert.deepEqual(errors,[]);
-  console.log('PASS: concise menu and room, player name, two maps, create/start/return/exit, mobile layout');
+  console.log('PASS: concise menu and room, player name, four maps, create/start/return/exit, mobile layout');
 } finally { await browser.close(); }

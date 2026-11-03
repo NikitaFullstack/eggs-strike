@@ -24,7 +24,7 @@ try {
   await Promise.all([host, guest].map(c => new Promise(resolve => c.ws.once('open', resolve))));
   host.send({ t: 'create', name: 'Cover host' });
   const joined = await host.wait(m => m.t === 'joined');
-  assert.deepEqual(joined.maps.map(m => m.id), ['henhouse_ffa_01', 'training_grounds'], 'Server exposes the henhouse and imported training map');
+  assert.deepEqual(joined.maps.map(m => m.id), ['henhouse_ffa_01', 'training_grounds', 'refrigerator', 'kitchen'], 'Server exposes all four maps');
   guest.send({ t: 'join', code: joined.code, name: 'Cover guest' });
   const other = await guest.wait(m => m.t === 'joined');
   host.send({ t: 'start' });

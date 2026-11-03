@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>ЯЙЦА — перестрелка</title>
-<link rel="stylesheet" href="style.css?v=20261103h" />
+<link rel="stylesheet" href="style.css?v=20261103j" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥚</text></svg>" />
 </head>
 <body>
@@ -29,7 +29,7 @@
   </header>
   <div class="menu-bottom">
     <div class="menu-controls panel">
-      <p class="panel-description">До 4 игроков · 5 минут</p>
+      <p id="matchDescription" class="panel-description">До 4 игроков · 5 минут</p>
       <label class="field">
         <span>Имя</span>
         <input id="name" maxlength="12" placeholder="Яйцо" autocomplete="off" spellcheck="false" />
@@ -197,13 +197,15 @@
 </section>
 
 <script src="henhouse-level.js?v=20261103h"></script>
+<script src="household-maps.js?v=20261103j"></script>
 <script src="arena-geometry.js?v=20261103h"></script>
 <script src="mesh-world.js?v=20261103h"></script>
 <script src="henhouse-dressing.js?v=20261103h"></script>
 <script src="coop-world.js?v=20261103h"></script>
+<script src="household-world.js?v=20261103j"></script>
 <script src="combat-effects.js?v=20261103h"></script>
 <script src="grenade-effects.js?v=20261103i"></script>
-<script type="module" src="game.js?v=20261103h"></script>
+<script type="module" src="game.js?v=20261103j"></script>
 <script>
   (function () {
     var retry = document.getElementById('bootRetry');
