@@ -31,6 +31,29 @@ try {
     await page.evaluate(pose => Object.assign(window.__egg.S.me, { vy: 0, onGround: true, pitch: 0, yaw: 0, ...pose }), pose);
     await page.evaluate(() => new Promise(requestAnimationFrame));
   }
+  async function walkTo(point, label) {
+    const start = await page.evaluate(() => ({ x: window.__egg.S.me.x, z: window.__egg.S.me.z }));
+    const dx = point.x - start.x, dz = point.z - start.z, length = Math.hypot(dx, dz);
+    await page.evaluate(({ yaw, y }) => {
+      window.__egg.S.me.yaw = yaw;
+      window.__walkHeightError = Math.abs(window.__egg.S.me.y - y);
+    }, { yaw: Math.atan2(-dx, -dz), y: point.y });
+    await page.keyboard.down('KeyW');
+    try {
+      await page.waitForFunction(({ start, dx, dz, length, y }) => {
+        const me = window.__egg.S.me;
+        window.__walkHeightError = Math.max(window.__walkHeightError, Math.abs(me.y - y));
+        return ((me.x - start.x) * dx + (me.z - start.z) * dz) / length >= length - .08;
+      }, { start, dx, dz, length, y: point.y }, { timeout: Math.max(9000, length * 2000) });
+    } catch (error) {
+      console.error(label, await page.evaluate(() => ({ x: window.__egg.S.me.x, y: window.__egg.S.me.y, z: window.__egg.S.me.z, heightError: window.__walkHeightError })));
+      await page.screenshot({ path: '/tmp/egg-household-walk-error.png' });
+      throw error;
+    } finally { await page.keyboard.up('KeyW'); }
+    const result = await page.evaluate(() => ({ ...window.__egg.S.me, heightError: window.__walkHeightError }));
+    assert.ok(Math.hypot(result.x - point.x, result.z - point.z) < .6, `${label}: stays on the intended route`);
+    assert.ok(result.heightError < .08 && result.onGround, `${label}: keeps its floor throughout the crossing`);
+  }
   for (const map of Household.maps) {
     await page.goto(base + '/?debug=1');
     await page.waitForFunction(() => !!window.__egg);
@@ -86,15 +109,34 @@ try {
         try {
           await page.waitForFunction(({ axis, end, movement }) => window.__egg.S.me[axis] * movement >= end * movement,
             { axis, end, movement: sign * direction }, { timeout: 9000 });
+        } catch (error) {
+          console.error(`${map.id} ${ramp.id} direction ${direction}`, await page.evaluate(() => ({ x: window.__egg.S.me.x, y: window.__egg.S.me.y, z: window.__egg.S.me.z, locked: window.__egg.S.locked, alive: window.__egg.S.me.alive, ground: window.__egg.S.me.onGround })));
+          await page.screenshot({ path: `/tmp/egg-${map.id}-route-error.png` });
+          throw error;
         } finally { await page.keyboard.up('KeyW'); }
         const feet = await page.evaluate(() => ({ y: window.__egg.S.me.y, ground: window.__egg.S.me.onGround }));
         assert.ok(Math.abs(feet.y - (direction === 1 ? ramp.h1 : ramp.h0)) < .02 && feet.ground, `${ramp.id}: real keyboard movement crosses slope and landing ${direction}`);
       }
     }
-    // Capture a playable view from the south approach, with two remote players.
-    const cover = map.crates.find(box => box.id.endsWith('BOARD'));
-    a.send(JSON.stringify({ t: 'input', x: 0, y: cover.h, z: cover.z - .8, yaw: 0, pitch: 0 }));
-    b.send(JSON.stringify({ t: 'input', x: 4, y: 0, z: 5.7, yaw: -.7, pitch: 0 }));
+    const upper = map.id === 'refrigerator'
+      ? [[-7.7, -.4], [-7.7, -4.9], [7.7, -4.9], [7.7, -.4]].map(([x, z]) => ({ x, y: 2.8, z }))
+      : [[-6.1, 1.2], [-6.1, .6], [-3.2, .6], [-3.2, -1], [5.2, -1], [5.2, -5.2], [6.6, -5.6]].map(([x, z]) => ({ x, y: 2.1, z }));
+    await place(upper[0]);
+    for (const point of upper.slice(1)) await walkTo(point, `${map.id}: continuous upper route`);
+    const underpass = map.id === 'refrigerator'
+      ? [{ x: -4, y: 0, z: -7.8 }, { x: -4, y: 0, z: -3.4 }]
+      : [{ x: 2.25, y: 0, z: -3 }, { x: 2.25, y: 0, z: 1 }];
+    for (const path of [underpass, [...underpass].reverse()]) {
+      await place(path[0]);
+      await walkTo(path[1], `${map.id}: lower route remains open below the deck`);
+    }
+    // The same column supports two players on different levels.
+    const upperGuest = map.id === 'refrigerator' ? { x: 0, y: 2.8, z: -4.9 } : { x: 2.25, y: 2.1, z: -1 };
+    a.send(JSON.stringify({ t: 'input', ...upperGuest, yaw: 0, pitch: 0 }));
+    b.send(JSON.stringify({ t: 'input', ...upperGuest, y: 0, yaw: -.7, pitch: 0 }));
+    await place(map.showcaseUpper);
+    await page.evaluate(async () => { for (let i = 0; i < 6; i++) await new Promise(requestAnimationFrame); });
+    await page.screenshot({ path: `/tmp/egg-${map.id}-upper.png` });
     await place(map.showcase);
     await page.evaluate(async () => { for (let i = 0; i < 6; i++) await new Promise(requestAnimationFrame); });
     await page.screenshot({ path: `/tmp/egg-${map.id}.png` });
@@ -109,7 +151,7 @@ try {
     assert.equal(await page.evaluate(() => window.__egg.getGrenades().active), 0);
     for (const ws of [a, b]) ws.close();
     await page.click('#btnLeave'); await page.waitForSelector('#menu:not(.hidden)');
-    console.log(`PASS: ${map.name}; three clients, exact geometry, both ramp directions, live G and gun, indoor ambience, clean exit`);
+    console.log(`PASS: ${map.name}; three clients, exact geometry, bidirectional ramps, continuous upper routes, lower passages, live G and gun, indoor ambience, clean exit`);
   }
   // All four choices fit on a phone and remain separate from controls at small sizes.
   await page.goto(base + '/?debug=1'); await page.waitForFunction(() => !!window.__egg);

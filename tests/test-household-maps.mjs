@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import Household from '../public/household-maps.js';
 import G from '../public/arena-geometry.js';
 import Grenades from '../public/grenade-physics.js';
-import { householdFixture } from './household-fixture.mjs';
+import { householdFixture, layeredNavigation } from './household-fixture.mjs';
 
 const close = (a, b) => Math.abs(a - b) < 1e-5;
 assert.deepEqual(Household.maps.map(map => map.id).sort(), ['kitchen', 'refrigerator']);
@@ -11,7 +11,7 @@ for (const map of Household.maps) {
   const fixture = householdFixture(map);
   const { bounds, playerCollision: capsule } = map;
   const label = message => `${map.name}: ${message}`;
-  assert.deepEqual([bounds.widthX, bounds.depthZ], map.id === 'refrigerator' ? [24, 20] : [28, 22], label('larger arenas keep their three-player limit'));
+  assert.deepEqual([bounds.widthX, bounds.depthZ], map.id === 'refrigerator' ? [26, 22] : [30, 24], label('larger arenas keep their three-player limit'));
   assert.ok(map.mesh, label('gameplay uses the visible curved geometry'));
   assert.equal(map.players.max, 3);
   assert.equal(map.spawns.length, 3);
@@ -26,28 +26,25 @@ for (const map of Household.maps) {
       label(`${a.id} and ${b.id} cannot shoot each other immediately after spawning`));
   }
 
-  // Flood the actual capsule-clear floor, not a designer-supplied navigation graph.
-  const step = .25, w = Math.round(bounds.widthX / step) + 1, d = Math.round(bounds.depthZ / step) + 1;
-  const key = (i, j) => j * w + i;
-  const point = (i, j) => ({ x: bounds.minX + i * step, z: bounds.minZ + j * step });
-  const cell = ({ x, z }) => [Math.round((x - bounds.minX) / step), Math.round((z - bounds.minZ) / step)];
-  const clear = new Set();
-  for (let j = 0; j < d; j++) for (let i = 0; i < w; i++) {
-    const { x, z } = point(i, j);
-    if (!G.blocks(map, x, z, bounds.floorY) && close(G.groundHeight(map, x, z, bounds.floorY + capsule.maxStepHeight), bounds.floorY) && !fixture.insideProp(x, bounds.floorY, z)) clear.add(key(i, j));
+  // Sample separate supports at the same X/Z, then flood only bidirectionally
+  // walkable capsule sweeps. A floor cell cannot teleport onto the shelf above.
+  const navigation = layeredNavigation(map, fixture);
+  const { nodes, reached } = navigation;
+  assert.equal(map.layoutRevision, 2, label('persistent rooms can recognize the changed layout'));
+  assert.ok(nodes.length > 1000, label('navigation samples the actual geometry'));
+  assert.ok(reached.size / nodes.length > .98, label(`routes do not contain isolated playable pockets (${reached.size}/${nodes.length})`));
+  for (const spawn of map.spawns) {
+    const node = navigation.nearest(spawn);
+    assert.ok(node && close(node.y, spawn.y) && reached.has(node.id), label(`walk to ${spawn.id} without jumping`));
   }
-  const start = cell(map.spawns[0]), reached = new Set([key(...start)]), queue = [start];
-  assert.ok(clear.has(key(...start)), label('spawn connects to the sampled walkable floor'));
-  for (let q = 0; q < queue.length; q++) {
-    const [i, j] = queue[q];
-    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const ni = i + dx, nj = j + dz, next = key(ni, nj);
-      if (ni < 0 || nj < 0 || ni >= w || nj >= d || !clear.has(next) || reached.has(next)) continue;
-      reached.add(next); queue.push([ni, nj]);
-    }
+  const upperChecks = map.id === 'refrigerator'
+    ? [{x:-7.7,y:2.8,z:-2}, {x:0,y:2.8,z:-4.9}, {x:7.7,y:2.8,z:-2}]
+    : [{x:-3.2,y:2.1,z:1.2}, {x:2.25,y:2.1,z:-1}, {x:5.2,y:2.1,z:-4.8}];
+  for (const point of upperChecks) {
+    const node = navigation.nearest(point);
+    assert.ok(node && close(node.y, point.y) && reached.has(node.id), label(`upper route at ${point.x},${point.z} is connected to the floor`));
   }
-  assert.ok(reached.size / clear.size > .98, label('ground routes do not contain isolated playable pockets'));
-  for (const spawn of map.spawns) assert.ok(reached.has(key(...cell(spawn))), label(`walk to ${spawn.id} without jumping`));
+  assert.ok(nodes.filter(node => node.y > 1.8 && reached.has(node.id)).length > 300, label('a substantial upper route is genuinely accessible'));
 
   assert.ok(map.ramps.length >= 2, label('elevated route has more than one entrance'));
   for (const ramp of map.ramps) {
@@ -57,22 +54,70 @@ for (const map of Household.maps) {
     assert.ok(Math.atan2(Math.abs(ramp.h1 - ramp.h0), length) * 180 / Math.PI <= capsule.maxWalkableSlopeDegrees, label(`${ramp.id} is a walkable slope`));
     assert.ok((axis === 'x' ? ramp.d : ramp.w) >= capsule.radius * 2 + .7, label(`${ramp.id} has comfortable width`));
     const lowT = ramp.h0 <= ramp.h1 ? -.5 / length : 1 + .5 / length;
-    assert.ok(reached.has(key(...cell(at(lowT)))), label(`${ramp.id} lower approach connects to the floor`));
+    const approach = navigation.nearest({ ...at(lowT), y: Math.min(ramp.h0, ramp.h1) });
+    assert.ok(approach && reached.has(approach.id), label(`${ramp.id} lower approach connects to the layered routes`));
     // Match movement's support-height rule in small real steps, including each landing.
-    for (const direction of [1, -1]) {
+    for (const lateral of [-.55, 0, .55]) for (const direction of [1, -1]) {
+      const atLine = t => { const point = at(t); point[axis === 'x' ? 'z' : 'x'] += lateral; return point; };
       const from = direction === 1 ? -.4 / length : 1 + .4 / length;
       const to = direction === 1 ? 1 + .4 / length : -.4 / length;
-      const count = Math.ceil((length + .8) / .04), initial = at(from);
+      const count = Math.ceil((length + .8) / .04), initial = atLine(from);
       let feet = G.groundHeight(map, initial.x, initial.z, Math.max(ramp.h0, ramp.h1) + capsule.maxStepHeight);
       for (let i = 0; i <= count; i++) {
-        const t = from + (to - from) * i / count, p = at(t);
-        assert.equal(G.blocks(map, p.x, p.z, feet), false, label(`${ramp.id} does not snag ${direction > 0 ? 'forward' : 'backward'} at ${t.toFixed(2)}`));
+        const t = from + (to - from) * i / count, p = atLine(t);
+        assert.equal(G.blocks(map, p.x, p.z, feet), false, label(`${ramp.id} does not snag ${direction > 0 ? 'forward' : 'backward'} at ${t.toFixed(2)}, offset ${lateral}`));
         const support = G.groundHeight(map, p.x, p.z, feet + capsule.maxStepHeight);
         assert.ok(Math.abs(support - feet) <= capsule.maxStepHeight + .001, label(`${ramp.id} has a continuous landing`));
         feet = support;
         if (t >= 0 && t <= 1) assert.ok(close(feet, ramp.h0 + (ramp.h1 - ramp.h0) * t), label(`${ramp.id} follows the visible slope`));
       }
     }
+  }
+
+  const upperPaths = map.id === 'refrigerator' ? [
+    [[-7.7,5.8],[-7.7,-4.9],[7.7,-4.9],[7.7,5.8]],
+  ] : [
+    [[-11.8,1.2],[-6.1,1.2],[-6.1,.6],[-3.2,.6],[-3.2,-1],[5.2,-1],[5.2,-5.2],[6.6,-5.6],[6.6,-10.7]],
+    [[-1.8,7.7],[-1.8,2.6],[-3.2,2.6],[-3.2,.6],[-6.1,.6],[-6.1,1.2],[-11.8,1.2]],
+  ];
+  for (const path of upperPaths) for (const direction of [1, -1]) {
+    const route = direction === 1 ? path : [...path].reverse();
+    let feet = 0, climbed = 0;
+    for (let segment = 1; segment < route.length; segment++) {
+      const [ax,az] = route[segment-1], [bx,bz] = route[segment];
+      const count = Math.ceil(Math.hypot(bx-ax,bz-az)/.04);
+      for (let i = 1; i <= count; i++) {
+        const t = i/count, x = ax+(bx-ax)*t, z = az+(bz-az)*t;
+        const support = G.groundHeight(map,x,z,feet+capsule.maxStepHeight);
+        assert.ok(Math.abs(support-feet)<=capsule.maxStepHeight+.001, label(`upper circuit has a continuous support at ${x.toFixed(2)},${z.toFixed(2)}`));
+        assert.equal(G.blocks(map,x,z,Math.max(feet,support)),false,label(`upper circuit remains capsule-clear at ${x.toFixed(2)},${z.toFixed(2)}`));
+        feet=support; climbed=Math.max(climbed,feet);
+      }
+    }
+    assert.ok(climbed>=2, label('continuous circuit reaches the upper floor'));
+    assert.ok(close(feet,0),label('continuous circuit returns to the ground through another entrance'));
+  }
+
+  const tunnel = map.id === 'refrigerator'
+    ? { x:-4, z:-5.6, top:2.8, from:{x:-4,y:0,z:-7.9}, to:{x:-4,y:0,z:-3.3} }
+    : { x:2.25, z:-1, top:2.1, from:{x:2.25,y:0,z:-3}, to:{x:2.25,y:0,z:1} };
+  assert.ok(close(G.groundHeight(map, tunnel.x, tunnel.z, .23), 0), label('lower support remains the floor below the deck'));
+  assert.ok(close(G.groundHeight(map, tunnel.x, tunnel.z, tunnel.top + .23), tunnel.top), label('upper support is a separate real deck'));
+  assert.equal(G.blocks(map, tunnel.x, tunnel.z, 0), false, label('a complete standing capsule fits underneath'));
+  assert.equal(G.blocks(map, tunnel.x, tunnel.z, tunnel.top), false, label('a complete standing capsule fits on top'));
+  const ceiling = G.ceilingHeight(map, tunnel.x, tunnel.z, capsule.height);
+  assert.ok(ceiling > capsule.height + .3 && ceiling < tunnel.top, label('the lower path has headroom and a real overhead slab'));
+  const up = G.rayMesh(map, {x:tunnel.x,y:.5,z:tunnel.z}, {x:0,y:1,z:0});
+  const down = G.rayMesh(map, {x:tunnel.x,y:tunnel.top+1,z:tunnel.z}, {x:0,y:-1,z:0});
+  assert.ok(up && up.point.y < tunnel.top && up.point.y > capsule.height, label('upward fire hits the underside'));
+  assert.ok(down && close(down.point.y, tunnel.top), label('downward fire hits the deck surface'));
+  assert.equal(G.visible(map, {x:tunnel.x,y:.6,z:tunnel.z}, {x:tunnel.x,y:tunnel.top+.6,z:tunnel.z}), false, label('players on different floors cannot shoot through the slab'));
+  assert.equal(G.visible(map, {...tunnel.from,y:.7}, {...tunnel.to,y:.7}), true, label('a horizontal shot passes through the open tunnel'));
+  assert.ok(Grenades.sweep(map, {x:tunnel.x,y:.6,z:tunnel.z}, {x:0,y:1,z:0}, tunnel.top), label('the underside also stops a swept grenade'));
+  for (let i = 0; i <= 100; i++) {
+    const t = i / 100, x = tunnel.from.x + (tunnel.to.x-tunnel.from.x)*t, z = tunnel.from.z + (tunnel.to.z-tunnel.from.z)*t;
+    assert.equal(G.blocks(map,x,z,0), false, label('the lower route stays clear across the complete underpass'));
+    assert.ok(close(G.groundHeight(map,x,z,.23),0), label('walking underneath cannot snap up to the deck'));
   }
 
   // Independent Three.js raycasts must agree with the shared Octree across
@@ -131,5 +176,5 @@ for (const map of Household.maps) {
   }
   assert.ok(testedCovers >= 2, label('test several usable pieces of cover'));
   fixture.dispose();
-  console.log(`PASS: ${map.name}; 3 protected spawns; ${reached.size} connected floor samples; ${map.ramps.length} bidirectional ramps; ${rays} independent shape rays; ${roundedPassages} curved clearances; ${testedCovers} cover checks`);
+  console.log(`PASS: ${map.name}; 3 protected spawns; ${reached.size} connected layered samples; ${map.ramps.length} bidirectional ramps; ${rays} independent shape rays; ${roundedPassages} curved clearances; ${testedCovers} cover checks`);
 }

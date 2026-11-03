@@ -188,7 +188,10 @@ function onMessage(msg) {
 
 function show(screen) {
   wardrobe?.close();
-  if (screen !== 'hud') { clearCombat(); grenadeEffects?.clear(); }
+  if (screen !== 'hud') {
+    clearCombat(); grenadeEffects?.clear();
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
   S.screen = screen;
   for (const id of ['menu', 'lobby', 'hud', 'results']) {
     $(id).classList.toggle('hidden', id !== screen);
@@ -2072,6 +2075,17 @@ function drawMinimap() {
 
   for (const cr of [...S.arena.crates, ...S.arena.platforms || [], ...S.arena.ramps || [], ...S.arena.stairs || []]) {
     if (cr.type === 'beam' || cr.minimap === false) continue;
+    // Raised decks leave the floor beneath them open. Outlines and slope arrows
+    // make both routes readable instead of drawing the entire footprint as cover.
+    if (S.arena.household && ['shelf', 'island', 'bridge'].includes(cr.model)) {
+      const x = px(cr.x - cr.w / 2), z = pz(cr.z - cr.d / 2);
+      g.fillStyle = 'rgba(131, 209, 215, .15)';
+      g.strokeStyle = 'rgba(150, 226, 227, .85)';
+      g.lineWidth = 1.5;
+      g.fillRect(x, z, cr.w * scale, cr.d * scale);
+      g.strokeRect(x, z, cr.w * scale, cr.d * scale);
+      continue;
+    }
     g.fillStyle = cr.type === 'hay' ? '#d8b45f' : cr.type === 'barn' ? '#a05b48' : 'rgba(192, 155, 100, .5)';
     g.fillRect(
       px(cr.x - cr.w / 2),
@@ -2079,6 +2093,16 @@ function drawMinimap() {
       Math.max(2, cr.w * scale),
       Math.max(2, cr.d * scale),
     );
+    if (S.arena.household && cr.dir && cr.h0 !== cr.h1) {
+      const sign = (cr.dir.startsWith('+') ? 1 : -1) * Math.sign(cr.h1 - cr.h0);
+      const dx = cr.dir.endsWith('x') ? sign : 0, dz = cr.dir.endsWith('z') ? sign : 0;
+      const length = Math.min(9, (dx ? cr.w : cr.d) * scale * .3);
+      const x = px(cr.x), z = pz(cr.z), endX = x + dx * length, endZ = z + dz * length;
+      g.strokeStyle = '#c6eeeb'; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(x - dx * length, z - dz * length); g.lineTo(endX, endZ);
+      g.moveTo(endX - dx * 3 - dz * 3, endZ - dz * 3 + dx * 3); g.lineTo(endX, endZ);
+      g.lineTo(endX - dx * 3 + dz * 3, endZ - dz * 3 - dx * 3); g.stroke();
+    }
   }
 
   for (const solid of S.arena.rounds) {

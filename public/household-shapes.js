@@ -54,6 +54,73 @@
     function label(skin, width, height, x, y, z, rotation = [0, 0, 0]) {
       return add(new THREE.PlaneGeometry(width, height), skin, x, y, z, rotation, [1, 1, 1], false);
     }
+    // Architecture uses metre-sized details, independent of each prop's footprint.
+    // Thin slabs and individual supports keep the space underneath genuinely open.
+    function worldPart(geometry, skin, x = 0, y = 0, z = 0) {
+      return add(geometry, skin, x / prop.w, y / prop.h, z / prop.d, [0, 0, 0], [1 / prop.w, 1 / prop.h, 1 / prop.d]);
+    }
+    function worldSolid(w, h, d, skin, x, y, z, radius = .025) {
+      return worldPart(rounded(w, h, d, radius, 2), skin, x, y, z);
+    }
+    function slab(thickness, skin, radius = .12) {
+      const w = prop.w, d = prop.d, r = Math.min(radius, w / 5, d / 5);
+      const shape = new THREE.Shape();
+      shape.moveTo(-w / 2 + r, -d / 2); shape.lineTo(w / 2 - r, -d / 2);
+      shape.quadraticCurveTo(w / 2, -d / 2, w / 2, -d / 2 + r); shape.lineTo(w / 2, d / 2 - r);
+      shape.quadraticCurveTo(w / 2, d / 2, w / 2 - r, d / 2); shape.lineTo(-w / 2 + r, d / 2);
+      shape.quadraticCurveTo(-w / 2, d / 2, -w / 2, d / 2 - r); shape.lineTo(-w / 2, -d / 2 + r);
+      shape.quadraticCurveTo(-w / 2, -d / 2, -w / 2 + r, -d / 2); shape.closePath();
+      const geometry = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, steps: 1, curveSegments: 5 });
+      geometry.rotateX(-Math.PI / 2);
+      worldPart(geometry, skin, 0, prop.h - thickness, 0);
+    }
+    function furniture(p) {
+      const shelf = p.model === 'shelf', island = p.model === 'island';
+      const thickness = Math.min(p.h, shelf ? .18 : island ? .24 : .14);
+      const upper = shelf ? 'shelfGlass' : p.type === 'metal' || p.type === 'plastic' ? p.type : 'wood';
+      slab(thickness, upper, shelf ? .09 : island ? .18 : .06);
+
+      if (shelf) {
+        // A stainless frame hugs the glass edge, entirely below its walking plane.
+        for (const z of [-p.d / 2 + .02, p.d / 2 - .02]) {
+          worldSolid(p.w - .12, .09, .038, 'chrome', 0, p.h - .08, z, .012);
+          worldSolid(p.w - .35, .09, .085, 'plastic', 0, p.h - thickness - .045, Math.sign(z) * (p.d / 2 - .055), .012);
+        }
+        for (const x of [-p.w / 2 + .02, p.w / 2 - .02]) worldSolid(.038, .09, p.d - .12, 'chrome', x, p.h - .08, 0, .012);
+      } else if (island) {
+        // Painted apron and shallow drawer fronts read as a kitchen worktable,
+        // while leaving a full-height passage between the four turned legs.
+        for (const z of [-p.d / 2 + .12, p.d / 2 - .12]) {
+          worldSolid(p.w - .35, .10, .12, 'cabinet', 0, p.h - thickness - .05, z);
+          for (const x of [-p.w * .23, p.w * .23]) {
+            worldSolid(p.w * .34, .12, .045, 'cabinet', x, p.h - .275, z + Math.sign(z) * .065, .018);
+            const handleZ = z + Math.sign(z) * .065, handleY = p.h - .275;
+            const curve = new THREE.CatmullRomCurve3([
+              new THREE.Vector3(x - .18, handleY, handleZ), new THREE.Vector3(x - .15, handleY, handleZ + Math.sign(z) * .025),
+              new THREE.Vector3(x + .15, handleY, handleZ + Math.sign(z) * .025), new THREE.Vector3(x + .18, handleY, handleZ),
+            ]);
+            worldPart(new THREE.TubeGeometry(curve, 8, .014, 6, false), 'chrome');
+          }
+        }
+        for (const x of [-p.w / 2 + .12, p.w / 2 - .12]) worldSolid(.12, .10, p.d - .35, 'cabinet', x, p.h - thickness - .05, 0);
+      } else {
+        // Narrow metal strips protect a cutting-board bridge's exposed edges.
+        for (const z of [-p.d / 2 + .015, p.d / 2 - .015]) worldSolid(p.w - .08, .055, .025, 'metal', 0, p.h - .09, z, .008);
+      }
+
+      const legHeight = p.h - thickness;
+      if (p.supports === false || legHeight < .4) return;
+      const inset = island ? .28 : .24;
+      const xs = [-p.w / 2 + inset, p.w / 2 - inset];
+      if (shelf && p.w > 12) xs.splice(1, 0, 0);
+      for (const x of xs) for (const z of [-p.d / 2 + inset, p.d / 2 - inset]) {
+        if (island) {
+          const profile = [[0, 0], [.13, 0], [.14, .08], [.10, .18], [.10, legHeight - .2], [.14, legHeight - .10], [.14, legHeight], [0, legHeight]];
+          worldPart(new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), 12), 'cabinet', x, 0, z);
+        } else worldPart(new THREE.CylinderGeometry(.10, .11, legHeight, 12), 'metal', x, legHeight / 2, z);
+        worldSolid(.28, .055, .28, shelf ? 'plastic' : 'rubber', x, .0275, z, .025);
+      }
+    }
     function breadSlice(x, y, z) {
       const shape = new THREE.Shape();
       shape.moveTo(-.32, 0); shape.lineTo(.32, 0); shape.lineTo(.32, .18);
@@ -66,6 +133,7 @@
     function model(p) {
       begin(p);
       switch (p.model) {
+        case 'shelf': case 'island': case 'bridge': furniture(p); break;
         case 'milkCarton': {
           body(.88, .72, .86, 'milk', 0, .36, 0, .025);
           const roof = new THREE.Shape(); roof.moveTo(-.44, .72); roof.lineTo(0, .93); roof.lineTo(.44, .72); roof.closePath();
@@ -221,7 +289,80 @@
         const top = ramp.h0 + (ramp.h1 - ramp.h0) * t;
         p.setY(i, p.getY(i) > 0 ? top : Math.max(arena.bounds.floorY, top - .10));
       }
-      geo.computeVertexNormals(); add(geo, 'wood');
+      geo.computeVertexNormals(); add(geo, ramp.type || (arena.household === 'fridge' ? 'plastic' : 'wood'));
+    }
+    // A ramp and a tabletop form one solid at their common edge. Leaving their
+    // two closed end caps inside that solid catches the capsule's rounded toe.
+    // Remove only the buried portions of those caps in BOTH the rendered and
+    // collision meshes; the exposed lower lip, top and bottom remain intact.
+    function trimTriangles(geometry, select, planes = []) {
+      const source = geometry.index ? geometry.toNonIndexed() : geometry;
+      const p = source.attributes.position, n = source.attributes.normal, u = source.attributes.uv;
+      const positions = [], normals = [], uv = [];
+      const read = i => ({ p: [p.getX(i), p.getY(i), p.getZ(i)], n: [n.getX(i), n.getY(i), n.getZ(i)], u: u ? [u.getX(i), u.getY(i)] : [0, 0] });
+      const interpolate = (a, b, t) => ({ p: a.p.map((v, i) => v + (b.p[i] - v) * t), n: a.n.map((v, i) => v + (b.n[i] - v) * t), u: a.u.map((v, i) => v + (b.u[i] - v) * t) });
+      function clip(polygon, plane, inside) {
+        const result = [];
+        if (!polygon.length) return result;
+        let previous = polygon.at(-1), previousD = plane(previous.p) * (inside ? 1 : -1);
+        for (const current of polygon) {
+          const currentD = plane(current.p) * (inside ? 1 : -1);
+          if ((previousD >= 0) !== (currentD >= 0)) result.push(interpolate(previous, current, previousD / (previousD - currentD)));
+          if (currentD >= 0) result.push(current);
+          previous = current; previousD = currentD;
+        }
+        return result;
+      }
+      function append(polygon) {
+        for (let i = 1; i + 1 < polygon.length; i++) for (const vertex of [polygon[0], polygon[i], polygon[i + 1]]) {
+          positions.push(...vertex.p); normals.push(...vertex.n); uv.push(...vertex.u);
+        }
+      }
+      for (let i = 0; i < p.count; i += 3) {
+        let polygon = [read(i), read(i + 1), read(i + 2)];
+        if (!select(polygon)) { append(polygon); continue; }
+        for (const plane of planes) {
+          append(clip(polygon, plane, false));
+          polygon = clip(polygon, plane, true);
+          if (!polygon.length) break;
+        }
+      }
+      if (source !== geometry) source.dispose();
+      geometry.dispose();
+      const result = new THREE.BufferGeometry();
+      result.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      result.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+      result.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      return result;
+    }
+    for (const ramp of arena.ramps || []) for (const deck of arena.crates || []) {
+      if (!['shelf', 'island', 'bridge'].includes(deck.model) || deck.rotation) continue;
+      if (Math.abs((deck.y || 0) + deck.h - ramp.h1) > .002) continue;
+      const axis = ramp.dir.endsWith('x') ? 'x' : 'z', cross = axis === 'x' ? 'z' : 'x';
+      const size = axis === 'x' ? 'w' : 'd', width = axis === 'x' ? 'd' : 'w';
+      const ai = axis === 'x' ? 0 : 2, ci = cross === 'x' ? 0 : 2, sign = ramp.dir.startsWith('+') ? 1 : -1;
+      const edge = ramp[axis] + sign * ramp[size] / 2;
+      if (Math.abs(edge - (deck[axis] - sign * deck[size] / 2)) > .002) continue;
+      const lo = Math.max(ramp[cross] - ramp[width] / 2, deck[cross] - deck[width] / 2);
+      const hi = Math.min(ramp[cross] + ramp[width] / 2, deck[cross] + deck[width] / 2);
+      if (hi <= lo) continue;
+      const bottom = Math.max(arena.bounds.floorY, ramp.h1 - .10);
+      const opening = [point => point[ci] - lo, point => hi - point[ci], point => point[1] - bottom];
+      for (const part of parts) {
+        if (part.propId === ramp.id) {
+          part.geometry = trimTriangles(part.geometry, triangle => triangle.every(v => Math.abs(v.p[ai] - edge) < .00001));
+        } else if (part.propId === deck.id) {
+          if (part.id === deck.id + ':0') {
+            part.geometry = trimTriangles(part.geometry, triangle => triangle.every(v => Math.abs(v.p[ai] - edge) < .00001), opening);
+          } else if (part.skin === 'chrome') {
+            part.geometry.computeBoundingBox();
+            const bounds = part.geometry.boundingBox;
+            if (Math.max(Math.abs(bounds.min[axis] - edge), Math.abs(bounds.max[axis] - edge)) < .06) {
+              part.geometry = trimTriangles(part.geometry, () => true, opening);
+            }
+          }
+        }
+      }
     }
     return parts;
   }
@@ -238,8 +379,8 @@
         const acx = p.getX(c) - p.getX(a), acy = p.getY(c) - p.getY(a), acz = p.getZ(c) - p.getZ(a);
         if (Math.hypot(aby * acz - abz * acy, abz * acx - abx * acz, abx * acy - aby * acx) < 1e-9) continue;
         indices.push(offset + a, offset + b, offset + c);
-        materials.push(part.impact || (['metal', 'chrome', 'glass', 'ceramic', 'plastic', 'wall', 'ceiling', 'floor', 'rubber'].includes(part.skin)
-          ? 'metal' : part.skin === 'wood' || part.skin === 'milk' ? 'wood' : 'hay'));
+        materials.push(part.impact || (['metal', 'chrome', 'glass', 'shelfGlass', 'ceramic', 'plastic', 'wall', 'ceiling', 'floor', 'rubber'].includes(part.skin)
+          ? 'metal' : ['wood', 'milk', 'cabinet'].includes(part.skin) ? 'wood' : 'hay'));
       }
     }
     return { positions, indices, materials };

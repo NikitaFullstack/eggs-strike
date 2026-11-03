@@ -15,6 +15,7 @@ globalThis.EggHouseholdWorld = {
       ceramic:'#d4e4db', glass:'#9cba9b', milk:'#f4eed8', juice:'#e1a643', cheese:'#edc55e',
       crust:'#b87537', crumb:'#e7c99b', bread:'#b87537', egg:'#f0dfbf', pulp:'#b4aa8b', yogurt:'#ede3d3',
       butter:'#f2d38a', tomato:'#c44431', leaf:'#617b40', tile:'#e5e5d8', white:'#f4f0df',
+      shelfGlass:'#b9d8d3', cabinet:'#829b86',
     };
     const aliases = { tin:'metal', carton:'pulp', red:'tomato', green:'leaf', deck:'wood', loaf:'crust' };
     function canvas(w = 512, h = w) { const c = document.createElement('canvas'); c.width=w;c.height=h;return c; }
@@ -80,6 +81,12 @@ globalThis.EggHouseholdWorld = {
         if(kind==='glass') {
           const g=ctx.createLinearGradient(0,0,512,0);g.addColorStop(0,'#e8f5d515');g.addColorStop(.18,'#f3fff159');g.addColorStop(.28,'#e8f5d500');g.addColorStop(.76,'#24452b0d');g.addColorStop(1,'#f1fff236');ctx.fillStyle=g;ctx.fillRect(0,0,512,512);
         }
+        if(kind==='shelfGlass') {
+          // Frosted glass remains readable from both floors; restrained highlights
+          // avoid a distracting transparent sorting layer over the entire arena.
+          const g=ctx.createLinearGradient(0,0,512,512);g.addColorStop(0,'#f7fff22b');g.addColorStop(.32,'#f7fff205');g.addColorStop(.75,'#5c96940a');g.addColorStop(1,'#f1fff129');ctx.fillStyle=g;ctx.fillRect(0,0,512,512);
+          for(let i=0;i<24;i++){const x=random()*512,y=random()*512;line('#f0fff21b',.5,x,y,x+22,y+15);}
+        }
       }
       const map=new THREE.CanvasTexture(c);map.colorSpace=THREE.SRGBColorSpace;map.anisotropy=4;
       map.wrapS=map.wrapT=THREE.RepeatWrapping;
@@ -100,14 +107,14 @@ globalThis.EggHouseholdWorld = {
     function material(raw) {
       const kind=aliases[raw]||raw;
       if(mats.has(kind))return mats.get(kind);
-      const shiny=['metal','chrome','ceramic','plastic','glass','tomato','juice'].includes(kind);
+      const shiny=['metal','chrome','ceramic','plastic','glass','shelfGlass','tomato','juice'].includes(kind);
       const mat=new THREE.MeshPhongMaterial({
         color:dressed?0xffffff:(colors[kind]||'#d6dbcf'),
         map:dressed?texture(kind):null, side:THREE.DoubleSide,
         shininess:kind==='chrome'?110:kind==='metal'?65:shiny?48:kind==='egg'?18:8,
         specular:shiny?0x9baea0:0x424638,
         envMap:dressed&&shiny?globalThis.EggHouseholdWorld.environment:null,
-        reflectivity:kind==='chrome'?.38:kind==='metal'?.23:kind==='glass'?.13:.045,
+        reflectivity:kind==='chrome'?.38:kind==='metal'?.23:kind==='glass'||kind==='shelfGlass'?.13:.045,
         combine:THREE.MixOperation,
       });
       mats.set(kind,mat);return mat;
@@ -151,21 +158,22 @@ globalThis.EggHouseholdWorld = {
     if(dressed) {
       const north=a.minZ+.308, west=a.minX+.308, east=a.maxX-.308;
       const ceiling=arena.crates.find(p=>/CEILING/.test(p.id))?.y||arena.boundaryHeight;
+      const upperDeck=Math.max(0,...arena.crates.filter(p=>['shelf','island','bridge'].includes(p.model)).map(p=>(p.y||0)+p.h));
       const trim=surface(fridge?0x9db7b4:0x97aa95),cream=surface(0xececd9),dark=surface(0x526a63),wood=material('wood');
       if(fridge) {
         // Flush ribs, gasket and lighting sit against the appliance casing.
         for(const x of [west,east]) {
-          for(const y of [.16,4.9,5.16])box(.045,.07,a.depthZ-.75,x,y,0,trim);
-          for(let z=a.minZ+1.4;z<a.maxZ;z+=1.25)box(.032,.32,.09,x,4.55,z,cream);
+          for(const y of [.16,ceiling-2.1,ceiling-1.84])box(.045,.07,a.depthZ-.75,x,y,0,trim);
+          for(let z=a.minZ+1.4;z<a.maxZ;z+=1.25)box(.032,.32,.09,x,ceiling-2.45,z,cream);
         }
         for(const x of [a.minX+.5,a.maxX-.5])box(.11,ceiling-.7,.035,x,(ceiling-.7)/2+.2,north,cream);
         box(a.widthX-1,.1,.035,0,.2,north,trim);
-        graphic('fridge-temperature',4,.8,0,5.35,north+.01,(ctx,w,h)=>{
+        graphic('fridge-temperature',4,.8,0,Math.min(ceiling-.7,Math.max(ceiling-1.65,upperDeck+1.65)),north+.01,(ctx,w,h)=>{
           ctx.fillStyle='#4d6b65';ctx.fillRect(0,0,w,h);ctx.strokeStyle='#d6e5d2';ctx.lineWidth=7;ctx.strokeRect(10,10,w-20,h-20);
           ctx.fillStyle='#f0f5dd';ctx.font='600 43px sans-serif';ctx.textAlign='left';ctx.fillText('FRESH STORAGE',44,h*.42);ctx.fillStyle='#b4cebd';ctx.font='22px sans-serif';ctx.fillText('COOL AIR CIRCULATION',44,h*.71);
           ctx.fillStyle='#e0f0b8';ctx.font='78px monospace';ctx.textAlign='right';ctx.fillText('+4°',w-40,h*.65);
         });
-        graphic('fridge-vent',7,.45,0,6.2,north+.01,(ctx,w,h)=>{
+        graphic('fridge-vent',7,.45,0,ceiling-.8,north+.01,(ctx,w,h)=>{
           ctx.fillStyle='#b5c8be';ctx.fillRect(0,0,w,h);for(let x=18;x<w-12;x+=25){ctx.fillStyle='#637f76';ctx.fillRect(x,12,6,h-24);ctx.fillStyle='#e9f0df';ctx.fillRect(x+6,12,3,h-24);}
         });
         const lamp=new THREE.MeshBasicMaterial({color:0xfff9dc});
@@ -192,11 +200,12 @@ globalThis.EggHouseholdWorld = {
           ctx.fillStyle='#f9efd6';ctx.fillRect(0,0,w,h);ctx.strokeStyle='#b29d74';ctx.lineWidth=8;ctx.strokeRect(8,8,w-16,h-16);ctx.fillStyle='#5b755d';ctx.textAlign='center';ctx.font='600 80px serif';ctx.fillText('Good morning',w/2,h*.33);ctx.font='42px serif';ctx.fillText('flour · milk · three eggs',w/2,h*.61);ctx.font='28px sans-serif';ctx.fillText('A LITTLE HOMEMADE CHAOS',w/2,h*.83);
         });
         for(const x of [west,east])box(.035,.13,a.depthZ-.6,x,.12,0,sage);
-        // A ceiling rose and pendant are well above any reachable route.
+        // Keep the pendant above the upper route as well as the ground floor.
         const lamp=new THREE.MeshBasicMaterial({color:0xffedc6});
-        deco(new THREE.CylinderGeometry(.62,.92,.42,32),cream,0,ceiling-.47,-2);
-        deco(new THREE.CylinderGeometry(.83,.83,.018,32),lamp,0,ceiling-.69,-2);
-        box(.04,.3,.04,0,ceiling-.15,-2,dark);
+        const lampBottom=Math.max(ceiling-.7,upperDeck+arena.playerCollision.height+.8);
+        deco(new THREE.CylinderGeometry(.62,.92,.42,32),cream,0,lampBottom+.22,-2);
+        deco(new THREE.CylinderGeometry(.83,.83,.018,32),lamp,0,lampBottom,-2);
+        box(.04,Math.max(.05,ceiling-lampBottom-.43),.04,0,(ceiling+lampBottom+.43)/2,-2,dark);
       }
       // Contact shadows anchor the rounded props without adding collision volumes.
       const shadowCanvas=canvas(128),sc=shadowCanvas.getContext('2d'),radial=sc.createRadialGradient(64,64,5,64,64,64);
