@@ -11,6 +11,7 @@ const LEVEL_DATA = require('./public/henhouse_ffa_level.json');
 const DEFAULT_MAP = Level.build(LEVEL_DATA);
 const TRAINING_MAP = require('./public/maps/training/map.json');
 const HouseholdMaps = require('./public/household-maps.js');
+const HouseholdShapes = require('./public/household-shapes.js');
 const MeshWorld = require('./public/mesh-world.js');
 const Grenades = require('./public/grenade-physics.js');
 
@@ -537,7 +538,7 @@ function handleShoot(room, p, msg) {
       const hit = ArenaGeometry.rayMesh(map, o, dir);
       if (hit) { blockT = hit.t; material = hit.material; normal = hit.normal; }
     }
-    for (const c of mapColliders(MAPS[room.mapId] || DEFAULT_MAP)) {
+    for (const c of map.mesh ? [] : mapColliders(map)) {
       const t = rayAABB(o, dir, c.min, c.max);
       if (t < blockT) {
         blockT = t; material = c.material || 'wood';
@@ -551,12 +552,12 @@ function handleShoot(room, p, msg) {
       }
     }
 
-    for (const r of MAPS[room.mapId].ramps || []) {
+    for (const r of map.mesh ? [] : map.ramps || []) {
       const hit = rayRamp(o, dir, r);
       if (hit.t < blockT) { blockT = hit.t; material = map.household === 'fridge' ? 'metal' : 'wood'; normal = hit.normal; }
     }
 
-    for (const solid of MAPS[room.mapId].rounds) {
+    for (const solid of map.mesh ? [] : map.rounds) {
       const t = ArenaGeometry.rayRound(o, dir, solid);
       if (t < blockT) { blockT = t; material = solid.type === 'feeder' ? 'metal' : impactMaterial(solid.type, map.household); normal = roundNormal(solid,{x:o.x+dir.x*t,y:o.y+dir.y*t,z:o.z+dir.z*t}); }
     }
@@ -801,6 +802,11 @@ async function startServer() {
   const { Capsule } = await import('three/addons/math/Capsule.js');
   const data = require('./public/maps/training/scene.json');
   ArenaGeometry.registerMesh(TRAINING_MAP.id, MeshWorld.collision(THREE, Octree, Capsule, data, TRAINING_MAP));
+  for (const arena of HouseholdMaps.maps) {
+    const parts = HouseholdShapes.build(THREE, arena);
+    ArenaGeometry.registerMesh(arena.id, MeshWorld.collision(THREE, Octree, Capsule, HouseholdShapes.toCollision(parts), arena));
+    for (const part of parts) part.geometry.dispose();
+  }
   server.listen(PORT, () => console.log(`EGG STRIKE ready on http://localhost:${PORT}`));
 }
 startServer().catch(error => { console.error('Map initialization failed:', error); clearInterval(heartbeat); process.exitCode = 1; });

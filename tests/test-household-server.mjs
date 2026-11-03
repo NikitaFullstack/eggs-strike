@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import WebSocket from 'ws';
 import Household from '../public/household-maps.js';
 import G from '../public/arena-geometry.js';
+import { householdFixture } from './household-fixture.mjs';
 
 const base = (process.env.BASE || 'http://127.0.0.1:3190').replace(/^http/, 'ws');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const clients = [];
+const fixtures = Household.maps.map(householdFixture);
 async function open() {
   const ws = new WebSocket(base + '/ws'), messages = [];
   ws.on('message', raw => messages.push(JSON.parse(raw)));
@@ -44,10 +46,11 @@ function coverLane(map) {
       if (G.blocks(map, from.x, from.z, 0) || G.blocks(map, to.x, to.z, 0)) continue;
       const direction = { x: axis === 'x' ? 1 : 0, y: 0, z: axis === 'z' ? 1 : 0 };
       const origin = { ...from, y: eye };
-      if (G.boxes(map).some(other => G.rayBox(origin, direction, other) < G.rayBox(origin, direction, box) - .001)) continue;
+      const hit = G.rayMesh(map, origin, direction);
+      if (!hit || hit.t >= extent + 1.2 || G.visible(map, origin, { ...to, y: eye })) continue;
       const shootPoint = [[2, 0], [-2, 0], [0, 2], [0, -2]].map(([dx, dz]) => ({ x: from.x + dx, y: 0, z: from.z + dz }))
         .find(p => !G.blocks(map, p.x, p.z, 0) && G.visible(map, { ...p, y: eye }, { ...from, y: map.playerCollision.height / 2 }));
-      if (shootPoint) return { from, to, direction, shootPoint, box, eye };
+      if (shootPoint) return { from, to, direction, shootPoint, box, eye, hit };
     }
   }
   throw Error(`${map.name}: no usable cover lane`);
@@ -110,8 +113,8 @@ try {
     host.send({ t: 'shoot', w: 'usp', dx: lane.direction.x, dy: 0, dz: lane.direction.z });
     const blocked = await host.wait(message => message.t === 'shot' && message.i === host.id, 'cover shot');
     assert.equal(blocked.rays[0].target, null, `${map.name}: real cover blocks bullets`);
-    const expectedDistance = (lane.direction.x ? lane.box.w : lane.box.d) / 2;
-    assert.ok(Math.abs((lane.direction.x ? blocked.rays[0].point.x - lane.box.x : blocked.rays[0].point.z - lane.box.z) + expectedDistance) < .001, `${map.name}: bullet impact matches the visible cover face`);
+    const expectedPoint = lane.hit.point;
+    assert.ok(Math.hypot(blocked.rays[0].point.x - expectedPoint.x, blocked.rays[0].point.y - expectedPoint.y, blocked.rays[0].point.z - expectedPoint.z) < .001, `${map.name}: bullet impact matches the visible curved cover`);
     await position(host, lane.shootPoint); await position(exposed, lane.from);
     await sleep(300);
     host.send({ t: 'shoot', w: 'usp', dx: lane.from.x - lane.shootPoint.x, dy: map.playerCollision.height / 2 - lane.eye, dz: lane.from.z - lane.shootPoint.z });
@@ -136,4 +139,4 @@ try {
     console.log(`PASS: ${map.name}; 3-player capacity; unique safe spawns; real cover and bullet damage; replicated grenade kill and protected opponent`);
   }
   console.log('PASS: full-room map switch rejected; capacity changes to 3 and back to 4 after a player leaves');
-} finally { for (const client of clients) client.ws.close(); }
+} finally { for (const client of clients) client.ws.close(); for (const fixture of fixtures) fixture.dispose(); }

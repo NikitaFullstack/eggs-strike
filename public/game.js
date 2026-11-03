@@ -13,6 +13,11 @@ const TRAINING_TEXTURE = await new THREE.TextureLoader().loadAsync(TRAINING_MAP.
 TRAINING_TEXTURE.colorSpace = THREE.SRGBColorSpace;
 TRAINING_TEXTURE.flipY = false;
 ArenaGeometry.registerMesh(TRAINING_MAP.id, EggMeshWorld.collision(THREE, Octree, Capsule, TRAINING_SCENE, TRAINING_MAP));
+for (const arena of EggHouseholdMaps.maps) {
+  const parts = EggHouseholdShapes.build(THREE, arena);
+  ArenaGeometry.registerMesh(arena.id, EggMeshWorld.collision(THREE, Octree, Capsule, EggHouseholdShapes.toCollision(parts), arena));
+  for (const part of parts) part.geometry.dispose();
+}
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('game');
@@ -604,13 +609,12 @@ function buildArena(arena) {
   const cold = arena.household === 'fridge';
   const sun = scene.children.find(o => o.isDirectionalLight);
   sun.color.set(cold ? 0xe7f5ff : 0xffe1a0);
-  sun.intensity = arena.household ? 1.35 : 1.85;
+  sun.intensity = arena.household ? .6 : 1.85;
   const hemi = scene.children.find(o => o.isHemisphereLight);
-  hemi.color.set(cold ? 0xe2f4ff : 0xfff4df);
-  hemi.groundColor.set(cold ? 0x708e9a : 0x7a6749);
-  hemi.intensity = arena.household ? 1.45 : 1.2;
-  arenaGroup.add(makeSky(arena.theme));
-  if (!arena.household) arenaGroup.add(makeClouds());
+  hemi.color.set(cold ? 0xf3faff : 0xfff4df);
+  hemi.groundColor.set(cold ? 0xa4b6bb : 0x7a6749);
+  hemi.intensity = arena.household ? 1.1 : 1.2;
+  if (!arena.household) { arenaGroup.add(makeSky(arena.theme)); arenaGroup.add(makeClouds()); }
   levelView = arena.household
     ? EggHouseholdWorld.build(THREE, arena, arenaGroup, worldMeshes)
     : arena.mesh
@@ -1084,7 +1088,7 @@ function startGame(msg) {
       o.geometry?.dispose();
       if (o.material) {
         for (const mat of Array.isArray(o.material) ? o.material : [o.material]) {
-          if (mat.map) textures.add(mat.map);
+          for (const value of Object.values(mat)) if (value?.isTexture) textures.add(value);
           mat.dispose();
         }
       }
@@ -2040,7 +2044,7 @@ function drawMinimap() {
   g.lineWidth = 2;
   g.strokeRect(px(-halfX), pz(-halfZ), halfX*2*scale, halfZ*2*scale);
 
-  if (S.arena.mesh) {
+  if (S.arena.mesh && !S.arena.household) {
     const preview = document.querySelector(`#menuMaps [data-map="${S.arena.id}"] img`);
     if (preview?.complete && preview.naturalWidth) g.drawImage(preview, pad, pad, span, span);
   }

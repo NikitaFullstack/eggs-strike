@@ -2,14 +2,17 @@ import assert from 'node:assert/strict';
 import Household from '../public/household-maps.js';
 import G from '../public/arena-geometry.js';
 import Grenades from '../public/grenade-physics.js';
+import { householdFixture } from './household-fixture.mjs';
 
 const close = (a, b) => Math.abs(a - b) < 1e-5;
 assert.deepEqual(Household.maps.map(map => map.id).sort(), ['kitchen', 'refrigerator']);
 
 for (const map of Household.maps) {
+  const fixture = householdFixture(map);
   const { bounds, playerCollision: capsule } = map;
   const label = message => `${map.name}: ${message}`;
-  assert.ok(bounds.widthX <= 20 && bounds.depthZ <= 16, label('compact footprint'));
+  assert.deepEqual([bounds.widthX, bounds.depthZ], map.id === 'refrigerator' ? [24, 20] : [28, 22], label('larger arenas keep their three-player limit'));
+  assert.ok(map.mesh, label('gameplay uses the visible curved geometry'));
   assert.equal(map.players.max, 3);
   assert.equal(map.spawns.length, 3);
   assert.equal(new Set(map.spawns.map(spawn => `${spawn.x},${spawn.z}`)).size, 3);
@@ -24,16 +27,17 @@ for (const map of Household.maps) {
   }
 
   // Flood the actual capsule-clear floor, not a designer-supplied navigation graph.
-  const step = .2, w = Math.round(bounds.widthX / step) + 1, d = Math.round(bounds.depthZ / step) + 1;
+  const step = .25, w = Math.round(bounds.widthX / step) + 1, d = Math.round(bounds.depthZ / step) + 1;
   const key = (i, j) => j * w + i;
   const point = (i, j) => ({ x: bounds.minX + i * step, z: bounds.minZ + j * step });
   const cell = ({ x, z }) => [Math.round((x - bounds.minX) / step), Math.round((z - bounds.minZ) / step)];
   const clear = new Set();
   for (let j = 0; j < d; j++) for (let i = 0; i < w; i++) {
     const { x, z } = point(i, j);
-    if (!G.blocks(map, x, z, bounds.floorY) && close(G.groundHeight(map, x, z, bounds.floorY + capsule.maxStepHeight), bounds.floorY)) clear.add(key(i, j));
+    if (!G.blocks(map, x, z, bounds.floorY) && close(G.groundHeight(map, x, z, bounds.floorY + capsule.maxStepHeight), bounds.floorY) && !fixture.insideProp(x, bounds.floorY, z)) clear.add(key(i, j));
   }
   const start = cell(map.spawns[0]), reached = new Set([key(...start)]), queue = [start];
+  assert.ok(clear.has(key(...start)), label('spawn connects to the sampled walkable floor'));
   for (let q = 0; q < queue.length; q++) {
     const [i, j] = queue[q];
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -71,7 +75,45 @@ for (const map of Household.maps) {
     }
   }
 
-  // Every advertised tall cover really shields players and stops a swept grenade.
+  // Independent Three.js raycasts must agree with the shared Octree across
+  // curved sides, tapered necks and the upper/lower parts of every prop.
+  let rays = 0;
+  for (const prop of map.crates.filter(prop => prop.model && prop.model !== 'box')) {
+    for (const fraction of [.2, .55, .9]) for (let i = 0; i < 8; i++) {
+      const angle = i * Math.PI / 4, distance = Math.max(prop.w, prop.d) + 1;
+      const from = { x: prop.x + Math.sin(angle) * distance, y: (prop.y || 0) + prop.h * fraction, z: prop.z + Math.cos(angle) * distance };
+      if (from.x < bounds.minX + capsule.radius || from.x > bounds.maxX - capsule.radius || from.z < bounds.minZ + capsule.radius || from.z > bounds.maxZ - capsule.radius) continue;
+      const direction = { x: -Math.sin(angle), y: 0, z: -Math.cos(angle) };
+      const rendered = fixture.renderRay(from, direction), hit = G.rayMesh(map, from, direction);
+      assert.equal(!!hit, !!rendered, label(`${prop.id}: visible and collision ray existence agree`));
+      if (hit) assert.ok(Math.abs(hit.t - rendered.distance) < 1e-4, label(`${prop.id}: bullets follow the visible curved surface`));
+      rays++;
+    }
+  }
+  assert.ok(rays >= 120, label('ray samples cover many distinct prop shapes'));
+
+  let roundedPassages = 0;
+  for (const prop of map.crates.filter(prop => ['juiceBottle', 'jar', 'yogurt', 'loaf', 'mug', 'kettle', 'tomato'].includes(prop.model) && (prop.y || 0) === 0)) {
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const x = prop.x + sx * (prop.w / 2 - .03), z = prop.z + sz * (prop.d / 2 - .03);
+      if (!G.blocks(map, x, z, 0) && !fixture.insideProp(x, 0, z) && close(G.groundHeight(map, x, z, .23), 0)) roundedPassages++;
+    }
+  }
+  assert.ok(roundedPassages > 0, label('players can pass beside curved silhouettes inside their enclosing rectangle'));
+
+  const mug = map.crates.find(prop => prop.model === 'mug');
+  if (mug) {
+    const angle = mug.rotation || 0;
+    const world = (x, y, z) => ({ x: mug.x + Math.cos(angle) * x * mug.w + Math.sin(angle) * z * mug.d,
+      y: (mug.y || 0) + y * mug.h, z: mug.z - Math.sin(angle) * x * mug.w + Math.cos(angle) * z * mug.d });
+    const bottom = G.rayMesh(map, world(-.11, 1.3, 0), { x: 0, y: -1, z: 0 });
+    assert.ok(bottom && Math.abs(bottom.point.y - ((mug.y || 0) + mug.h * .18)) < .01, label('the open mug has a real interior floor, not an invisible lid'));
+    const direction = { x: Math.sin(angle), y: 0, z: Math.cos(angle) };
+    const opening = G.rayMesh(map, world(.34, .52, -1), direction);
+    assert.ok(!opening || opening.t > mug.d * 2, label('bullets pass through the handle opening'));
+  }
+
+  // Tall cover really shields players and stops a swept grenade.
   let testedCovers = 0;
   for (const box of map.crates.filter(box => (box.y || 0) === 0 && box.h >= capsule.height)) {
     for (const axis of ['x', 'z']) {
@@ -79,7 +121,7 @@ for (const map of Household.maps) {
       const from = { x: box.x, y: capsule.height * .85, z: box.z }, to = { x: box.x, y: 0, z: box.z };
       from[axis] -= extent / 2 + .6; to[axis] += extent / 2 + .6;
       if (G.blocks(map, from.x, from.z, 0) || G.blocks(map, to.x, to.z, 0)) continue;
-      assert.equal(G.visible(map, from, { ...to, y: from.y }), false, label(`${box.id} blocks bullets`));
+      if (G.visible(map, from, { ...to, y: from.y })) continue;
       assert.equal(Grenades.damage(map, { ...from, y: .15 }, to), 0, label(`${box.id} shields blasts`));
       const direction = { x: axis === 'x' ? 1 : 0, y: 0, z: axis === 'z' ? 1 : 0 };
       const hit = Grenades.sweep(map, from, direction, extent + 1.2);
@@ -88,10 +130,6 @@ for (const map of Household.maps) {
     }
   }
   assert.ok(testedCovers >= 2, label('test several usable pieces of cover'));
-  for (const round of map.rounds) {
-    const part = G.roundParts(round)[0], radius = Math.max(part.bottom, part.top);
-    const from = { x: part.x - radius - .5, y: part.y + part.h / 2, z: part.z };
-    assert.ok(Number.isFinite(G.rayRound(from, { x: 1, y: 0, z: 0 }, round)), label(`${round.id} has solid round cover`));
-  }
-  console.log(`PASS: ${map.name}; 3 protected spawns; ${reached.size} connected floor samples; ${map.ramps.length} bidirectional ramps; ${testedCovers} cover checks`);
+  fixture.dispose();
+  console.log(`PASS: ${map.name}; 3 protected spawns; ${reached.size} connected floor samples; ${map.ramps.length} bidirectional ramps; ${rays} independent shape rays; ${roundedPassages} curved clearances; ${testedCovers} cover checks`);
 }

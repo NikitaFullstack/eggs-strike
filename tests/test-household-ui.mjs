@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import WebSocket from 'ws';
 import Household from '../public/household-maps.js';
-import G from '../public/arena-geometry.js';
+import * as THREE from 'three';
+import Shapes from '../public/household-shapes.js';
 
 const base = process.env.BASE || 'http://127.0.0.1:3000';
 const browser = await chromium.launch({
@@ -58,13 +59,20 @@ try {
     await page.waitForFunction(() => window.__egg.S.players.size === 2);
     assert.equal(await page.locator('#mapName').textContent(), map.name);
     const view = await page.evaluate(() => window.__egg.getLevelView());
-    // Rendered cover must exactly match what the server and capsule collide with.
-    for (const box of G.boxes(map)) {
-      const rendered = view.solids.find(solid => solid.id === box.id);
-      assert.ok(rendered, `${map.name}: render ${box.id}`);
-      const expected = [box.x - box.w / 2, box.y || 0, box.z - box.d / 2, box.x + box.w / 2, (box.y || 0) + box.h, box.z + box.d / 2];
-      [...rendered.min, ...rendered.max].forEach((value, index) => assert.ok(Math.abs(value - expected[index]) < .00001, `${box.id}: collider and mesh bounds agree`));
+    // Shared curved models, not their broad footprint boxes, define the world.
+    const parts = Shapes.build(THREE, map), bounds = new Map();
+    for (const part of parts) {
+      part.geometry.computeBoundingBox();
+      if (!bounds.has(part.propId)) bounds.set(part.propId, new THREE.Box3());
+      bounds.get(part.propId).union(part.geometry.boundingBox);
     }
+    for (const [id, box] of bounds) {
+      const rendered = view.solids.find(solid => solid.id === id);
+      assert.ok(rendered, `${map.name}: render ${id}`);
+      const expected = [...box.min.toArray(), ...box.max.toArray()];
+      [...rendered.min, ...rendered.max].forEach((value, index) => assert.ok(Math.abs(value - expected[index]) < .00001, `${id}: rendered shape follows the shared model`));
+    }
+    for (const part of parts) part.geometry.dispose();
     await page.click('#btnResumeGame'); await page.waitForFunction(() => window.__egg.S.locked);
     for (const ramp of map.ramps) {
       const axis = ramp.dir.endsWith('x') ? 'x' : 'z', sign = ramp.dir.startsWith('+') ? 1 : -1;
@@ -85,10 +93,9 @@ try {
     }
     // Capture a playable view from the south approach, with two remote players.
     const cover = map.crates.find(box => box.id.endsWith('BOARD'));
-    a.send(JSON.stringify({ t: 'input', x: 0, y: cover.h, z: cover.z, yaw: 0, pitch: 0 }));
-    b.send(JSON.stringify({ t: 'input', x: 3, y: 0, z: 4.8, yaw: -.7, pitch: 0 }));
-    const x = -.8, z = 5.4;
-    await place({ x, z, y: 0, yaw: Math.atan2(x, z), pitch: -.08 });
+    a.send(JSON.stringify({ t: 'input', x: 0, y: cover.h, z: cover.z - .8, yaw: 0, pitch: 0 }));
+    b.send(JSON.stringify({ t: 'input', x: 4, y: 0, z: 5.7, yaw: -.7, pitch: 0 }));
+    await place(map.showcase);
     await page.evaluate(async () => { for (let i = 0; i < 6; i++) await new Promise(requestAnimationFrame); });
     await page.screenshot({ path: `/tmp/egg-${map.id}.png` });
     await page.mouse.click(640, 400);

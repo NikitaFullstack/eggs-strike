@@ -5,11 +5,14 @@
   else root.EggMeshWorld = api;
 })(globalThis, function () {
   function collision(THREE, Octree, Capsule, data, arena) {
-    const tree = new Octree(), shape = arena.playerCollision;
+    const tree = new Octree(), shape = arena.playerCollision, materials = new WeakMap();
     for (let i = 0; i < data.indices.length; i += 3) {
       const [a, b, c] = data.indices.slice(i, i + 3).map(index => new THREE.Vector3().fromArray(data.positions, index * 3));
-      tree.addTriangle(new THREE.Triangle(a, b, c));
-      tree.addTriangle(new THREE.Triangle(c.clone(), b.clone(), a.clone())); // Source material is double-sided.
+      const front = new THREE.Triangle(a, b, c), back = new THREE.Triangle(c.clone(), b.clone(), a.clone());
+      tree.addTriangle(front); tree.addTriangle(back); // Source material is double-sided.
+      if (data.materials?.[i / 3]) {
+        materials.set(front, data.materials[i / 3]); materials.set(back, data.materials[i / 3]);
+      }
     }
     tree.build();
     const ray = new THREE.Ray(), normal = new THREE.Vector3();
@@ -20,7 +23,7 @@
       const hit = tree.rayIntersect(ray);
       if (!hit) return null;
       hit.triangle.getNormal(normal);
-      return { t: hit.distance, point: { ...hit.position }, normal: { ...normal }, material: Math.abs(normal.y) > .8 ? 'dirt' : 'metal' };
+      return { t: hit.distance, point: { ...hit.position }, normal: { ...normal }, material: materials.get(hit.triangle) || (Math.abs(normal.y) > .8 ? 'dirt' : 'metal') };
     }
     return {
       ray: cast,
