@@ -4,11 +4,12 @@ import WebSocket from 'ws';
 import Household from '../public/household-maps.js';
 import * as THREE from 'three';
 import Shapes from '../public/household-shapes.js';
+import { householdFixture } from './household-fixture.mjs';
 
 const base = process.env.BASE || 'http://127.0.0.1:3000';
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM || chromium.executablePath(), headless: true,
-  args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
+  args: ['--no-sandbox', ...(process.env.EGG_BROWSER_GPU === 'hardware' ? [] : ['--enable-unsafe-swiftshader', '--use-angle=swiftshader']), '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
 });
 const guests = [];
 async function guest(code, name) {
@@ -129,6 +130,29 @@ try {
     for (const path of [underpass, [...underpass].reverse()]) {
       await place(path[0]);
       await walkTo(path[1], `${map.id}: lower route remains open below the deck`);
+    }
+    if (map.id === 'refrigerator') {
+      // A shelf jump can land on the steep bottle shoulder. The actual client
+      // must slide outside its body, never fall through to an internal surface.
+      await place({ x: 5.6, y: 4.4, z: .1, vy: 0, onGround: false });
+      await page.waitForFunction(() => window.__egg.S.me.onGround, null, { timeout: 12000 });
+      const landed = await page.evaluate(() => ({ x: window.__egg.S.me.x, y: window.__egg.S.me.y, z: window.__egg.S.me.z }));
+      const fixture = householdFixture(map);
+      assert.equal(fixture.insideProp(landed.x, landed.y, landed.z), false, 'Shelf jump cannot put the player inside the juice bottle');
+      fixture.dispose();
+    } else {
+      await place({ x: 2.25, y: 6, z: -1, vy: -20, onGround: false });
+      await page.waitForFunction(() => window.__egg.S.me.onGround, null, { timeout: 12000 });
+      assert.ok(Math.abs(await page.evaluate(() => window.__egg.S.me.y) - 2.1) < .02, 'Fast fall lands on the thin bridge');
+      await place({ x: 2.25, y: 0, z: -1 });
+      await page.evaluate(() => { window.__jumpHeightMax = 0; });
+      await page.keyboard.press('Space');
+      await page.waitForFunction(() => {
+        const me = window.__egg.S.me;
+        window.__jumpHeightMax = Math.max(window.__jumpHeightMax, me.y);
+        return window.__jumpHeightMax > .2 && me.onGround;
+      }, null, { timeout: 12000 });
+      assert.ok(await page.evaluate(() => window.__jumpHeightMax) < .83, 'The capsule head stops below the bridge and falls back down');
     }
     // The same column supports two players on different levels.
     const upperGuest = map.id === 'refrigerator' ? { x: 0, y: 2.8, z: -4.9 } : { x: 2.25, y: 2.1, z: -1 };

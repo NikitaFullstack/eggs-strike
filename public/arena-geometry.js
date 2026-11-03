@@ -116,6 +116,10 @@
     return height;
   }
 
+  function moveVertical(arena, position, deltaY) {
+    return arena.mesh ? meshWorlds.get(arena.id).moveVertical(position, deltaY) : null;
+  }
+
   // Exact convex polygon faces, matching CylinderGeometry/ConeGeometry.
   function rayRound(origin, direction, solid) {
     let nearest = Infinity;
@@ -174,5 +178,5 @@
     return !arena.rounds.some(r=>rayRound(from,d,r)<length-.001)&&!arena.ramps.some(r=>rayRamp(from,d,r)<length-.001);
   }
 
-  return { registerMesh, rayMesh, rayRamp, rayBox, visible, ROUND_SEGMENTS, stairBoxes, boxes, rampT, blocks, groundHeight, ceilingHeight, roundParts, rayRound };
+  return { registerMesh, rayMesh, rayRamp, rayBox, visible, ROUND_SEGMENTS, stairBoxes, boxes, rampT, blocks, groundHeight, ceilingHeight, moveVertical, roundParts, rayRound };
 });

@@ -29,8 +29,95 @@
       hit.triangle.getNormal(normal);
       return { t: hit.distance, point: { ...hit.position }, normal: { ...normal }, material: materials.get(hit.triangle) || (Math.abs(normal.y) > .8 ? 'dirt' : 'metal') };
     }
+    function placeCapsule(point) {
+      capsule.start.set(point.x, point.y + shape.radius, point.z);
+      capsule.end.set(point.x, point.y + shape.height - shape.radius, point.z);
+      capsule.radius = shape.radius;
+    }
+    function obstruction(point) {
+      placeCapsule(point);
+      contacts.length = 0;
+      tree.getCapsuleTriangles(capsule, contacts);
+      let deepest = null;
+      for (const triangle of contacts) {
+        const hit = tree.triangleCapsuleIntersect(capsule, triangle);
+        if (!hit || hit.depth <= .0001) continue;
+        triangle.getNormal(normal);
+        // Walkable support uses the existing feet-height convention. All steep
+        // faces and undersides still resolve the complete capsule, including its
+        // rounded head/foot; they must never be treated as an absent floor.
+        if (normal.y >= walkableNormal && normal.dot(capsule.start) >= normal.dot(triangle.a) - .005) continue;
+        if (!deepest || hit.depth > deepest.depth) deepest = hit;
+      }
+      return deepest;
+    }
+    function footSupport(point) {
+      placeCapsule(point);
+      capsule.radius += .003;
+      contacts.length = 0;
+      tree.getCapsuleTriangles(capsule, contacts);
+      for (const triangle of contacts) {
+        triangle.getNormal(normal);
+        if (normal.y < walkableNormal || normal.dot(capsule.start) < normal.dot(triangle.a)) continue;
+        const hit = tree.triangleCapsuleIntersect(capsule, triangle);
+        if (hit && hit.normal.y >= walkableNormal) return true;
+      }
+      return false;
+    }
+    function moveVertical(position, deltaY) {
+      const point = { x: position.x, y: position.y, z: position.z };
+      const count = Math.max(1, Math.ceil(Math.abs(deltaY) / .05)), increment = deltaY / count;
+      let grounded = false, ceiling = false, blocked = false;
+      for (let step = 0; step < count; step++) {
+        const previous = { ...point };
+        point.y += increment;
+        let floor = false;
+        if (increment <= 0) {
+          const support = cast({ x: point.x, y: previous.y + .001, z: point.z }, { x: 0, y: -1, z: 0 });
+          if (support && support.normal.y >= walkableNormal && support.point.y <= previous.y + .005 && point.y <= support.point.y) {
+            point.y = support.point.y;
+            floor = true;
+          }
+        }
+        // A small sweep followed by contact projection slides down a bottle's
+        // shoulder instead of tunnelling through it. Re-query after each contact
+        // so a correction cannot push the player through a neighbouring solid.
+        let hit;
+        for (let iteration = 0; iteration < 16 && (hit = obstruction(point)); iteration++) {
+          const distance = hit.depth + .0002;
+          point.x += hit.normal.x * distance;
+          point.y += hit.normal.y * distance;
+          point.z += hit.normal.z * distance;
+          point.x = Math.max((arena.bounds.minX ?? -Infinity) + shape.radius, Math.min((arena.bounds.maxX ?? Infinity) - shape.radius, point.x));
+          point.z = Math.max((arena.bounds.minZ ?? -Infinity) + shape.radius, Math.min((arena.bounds.maxZ ?? Infinity) - shape.radius, point.z));
+          if (increment > 0 && hit.normal.y < -.05) ceiling = true;
+        }
+        if (obstruction(point)) {
+          // Preserve the last non-penetrating position in an unresolved corner.
+          Object.assign(point, previous);
+          blocked = true;
+          break;
+        }
+        if (floor) {
+          const support = cast({ x: point.x, y: point.y + .005, z: point.z }, { x: 0, y: -1, z: 0 });
+          grounded = !!support && support.normal.y >= walkableNormal && Math.abs(point.y - support.point.y) < .006;
+          if (grounded) { point.y = support.point.y; break; }
+        }
+        // A rounded foot can rest on a deck edge while its centre ray misses
+        // that deck. Require both a walkable face and upward capsule contact;
+        // touching the steep side of a bottle must not grant walking or jumps.
+        if (increment <= 0 && footSupport(point)) { grounded = true; break; }
+        if (ceiling) break;
+      }
+      // Contact projection also removes vertical momentum. Otherwise a capsule
+      // wedged between two curved faces would accumulate unlimited fall speed
+      // while barely moving, making subsequent sweeps unnecessarily expensive.
+      const velocityScale = deltaY === 0 ? 1 : Math.max(0, Math.min(1, (point.y - position.y) / deltaY));
+      return { ...point, grounded, ceiling, blocked, velocityScale };
+    }
     return {
       ray: cast,
+      moveVertical,
       blocks(x, z, y, radius = shape.radius) {
         capsule.start.set(x, y + radius, z); capsule.end.set(x, y + shape.height - radius, z); capsule.radius = radius;
         // A combined floor/wall correction can point upwards on a slope, hiding
@@ -50,7 +137,7 @@
       },
       groundHeight(x, z, limit) {
         const hit = cast({ x, y: limit + .001, z }, { x: 0, y: -1, z: 0 });
-        return hit && Math.abs(hit.normal.y) >= Math.cos(shape.maxWalkableSlopeDegrees * Math.PI / 180) ? hit.point.y : arena.bounds.floorY;
+        return hit && hit.normal.y >= walkableNormal ? hit.point.y : arena.bounds.floorY;
       },
       ceilingHeight(x, z, head) {
         let height = Infinity;

@@ -5,7 +5,7 @@ const base = process.env.BASE || 'http://127.0.0.1:3191';
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM || chromium.executablePath(),
   headless: true,
-  args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
+  args: ['--no-sandbox', ...(process.env.EGG_BROWSER_GPU === 'hardware' ? [] : ['--enable-unsafe-swiftshader', '--use-angle=swiftshader']), '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
 });
 try {
   const context = await browser.newContext({ viewport: { width: 900, height: 650 } });

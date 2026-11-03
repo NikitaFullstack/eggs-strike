@@ -145,22 +145,24 @@ try {
   await position(host,-4,6);await position(guest,-4.4,6);await position(newcomer,4,-6);
   await sleep(1550);toss(host);await host.wait(m=>m.t==='grenade','damage throw');
   await position(host,4,6);
-  // The late respawn's protection overlaps the detonation, while the exposed player has none.
+  // A genuine late join receives spawn protection; pausing/resuming a life no
+  // longer grants another immunity window.
   await sleep(1400);
-  newcomer.send({t:'lobby'});await newcomer.wait(m=>m.t==='players','lobby');
-  newcomer.send({t:'resume'});const protectedStart=await newcomer.wait(m=>m.t==='start','protected resume');
-  assert.equal(protectedStart.you.grenades,2);await position(newcomer,-4,6);
+  const protectedPeer=await open('Protected late join',host.code);
+  const protectedStart=await protectedPeer.wait(m=>m.t==='start','protected late join');
+  assert.equal(protectedStart.you.grenades,2);await position(protectedPeer,-4,6);
   await host.wait(m=>m.t==='kill'&&m.victim===guest.id&&m.killer===host.id&&m.w==='grenade','enemy grenade kill');
   const protectedState=await host.wait(m=>m.t==='s'&&m.p.some(p=>p.i===guest.id&&!p.a),'blast snapshot');
-  assert.equal(protectedState.p.find(p=>p.i===newcomer.id).hp,100,'Spawn immunity blocks blast damage');
+  assert.equal(protectedState.p.find(p=>p.i===protectedPeer.id).hp,100,'Spawn immunity blocks blast damage');
   assert.equal(protectedState.p.find(p=>p.i===host.id).k,1,'A grenade kill awards one frag');
 
-  // Leaving combat cancels the owner's remaining grenades and blocks further throws.
+  // Pausing preserves an already thrown grenade and blocks further throws.
   toss(host);const leaving=await host.wait(m=>m.t==='grenade','throw before lobby');
   host.send({t:'lobby'});toss(host);
   const lobby=await guest.wait(m=>m.t==='s'&&m.p.some(p=>p.i===host.id&&!p.a),'lobby snapshot');
-  assert.ok(!lobby.g.some(g=>g.id===leaving.id),'Returning to the lobby cleans up owned projectiles');
+  assert.ok(lobby.g.some(g=>g.id===leaving.id),'Returning to the lobby cannot cancel an already thrown grenade');
   await sleep(100);assert.ok(!host.messages.some(m=>m.t==='grenade'&&m.id!==leaving.id),'A player in the lobby cannot throw');
+  await guest.wait(m=>m.t==='explosion'&&m.id===leaving.id,'paused owner grenade still explodes');
 
   const meshHost=await open('Mesh grenadier',null,'training_grounds'),meshGuest=await open('Mesh observer',meshHost.code);
   await start(meshHost,[meshGuest]);await position(meshHost,-20,-13,2.318366);
@@ -174,6 +176,6 @@ try {
   meshHost.ws.close();
   const afterDisconnect=await meshGuest.wait(m=>m.t==='s'&&!m.p.some(p=>p.i===meshHost.id),'disconnect cleanup');
   assert.ok(!afterDisconnect.g.some(g=>g.id===disconnected.id),'Disconnecting removes owned projectiles');
-  console.log('PASS: authoritative inventory/cooldown; invalid input; replication and late join; fuse; round/lobby cleanup; self and enemy kills; immunity; respawn refill');
+  console.log('PASS: authoritative inventory/cooldown; invalid input; replication and late join; fuse; round cleanup and pause persistence; self and enemy kills; immunity; respawn refill');
   console.log('PASS: imported-map server flight and explosion; owner disconnect cleanup');
 } finally { for(const client of clients)client.ws.close(); }

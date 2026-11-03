@@ -4,7 +4,7 @@ import { chromium } from 'playwright';
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM || chromium.executablePath(),
   headless: true,
-  args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
+  args: ['--no-sandbox', ...(process.env.EGG_BROWSER_GPU === 'hardware' ? [] : ['--enable-unsafe-swiftshader', '--use-angle=swiftshader']), '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
 });
 const base = process.env.BASE || 'http://127.0.0.1:3000';
 try {

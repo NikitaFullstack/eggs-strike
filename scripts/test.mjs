@@ -3,8 +3,23 @@ import { createServer } from 'node:net';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 
+function readTimeoutEnv(name, fallback, maximum) {
+  const raw = process.env[name];
+  if (raw == null || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1000 || value > maximum) {
+    throw new RangeError(`${name} must be an integer from 1000 to ${maximum} milliseconds`);
+  }
+  return value;
+}
+const testTimeoutMs = readTimeoutEnv('EGG_TEST_TIMEOUT_MS', 120000, 3600000);
+const startTimeoutMs = readTimeoutEnv('EGG_TEST_START_TIMEOUT_MS', 15000, 300000);
 const root = fileURLToPath(new URL('..', import.meta.url));
 const serverTests = [
+  'test-client-lifecycle.mjs',
+  'test-vertical-physics.mjs',
+  'test-server-clock-hit.mjs',
+  'test-pause-resume.mjs',
   'test-appearance.mjs',
   'test-map-layout.mjs',
   'test-map-navigation.mjs',
@@ -58,7 +73,7 @@ try {
   });
   await new Promise((resolve, reject) => {
     let output = '';
-    const timeout = setTimeout(() => done(new Error(`Test server did not start:\n${output}`)), 15000);
+    const timeout = setTimeout(() => done(new Error(`Test server did not start within ${startTimeoutMs} ms:\n${output}`)), startTimeoutMs);
     function done(error) {
       clearTimeout(timeout);
       server.stdout.off('data', onData);
@@ -87,7 +102,7 @@ try {
       stdio: 'inherit',
     });
     let timedOut = false;
-    const timeout = setTimeout(() => { timedOut = true; current.kill('SIGKILL'); }, 120000);
+    const timeout = setTimeout(() => { timedOut = true; current.kill('SIGKILL'); }, testTimeoutMs);
     try {
       const [code, signal] = await once(current, 'exit');
       if (code !== 0) throw new Error(`${test} ${timedOut ? 'timed out' : `failed (${signal || code})`}`);

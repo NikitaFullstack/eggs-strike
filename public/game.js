@@ -72,15 +72,22 @@ let moving = false;
 let clock = 0;
 let wardrobe = null;
 
+function readStored(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function writeStored(key, value) {
+  try { localStorage.setItem(key, String(value)); return true; } catch { return false; }
+}
+
 function readAppearance() {
-  try { return EggAppearance.normalize(JSON.parse(localStorage.getItem('egg-appearance'))); }
+  try { return EggAppearance.normalize(JSON.parse(readStored('egg-appearance'))); }
   catch { return EggAppearance.normalize(); }
 }
 
 function selectAppearance(value) {
   S.appearance = EggAppearance.normalize(value);
-  let saved = true;
-  try { localStorage.setItem('egg-appearance', JSON.stringify(S.appearance)); } catch { saved = false; }
+  const saved = writeStored('egg-appearance', JSON.stringify(S.appearance));
   if (S.screen === 'lobby' && S.code) send({ t: 'appearance', appearance: S.appearance });
   updateLobbyIdentity();
   return saved;
@@ -105,37 +112,46 @@ function connect() {
   if (ws && ws.readyState === WebSocket.OPEN) return Promise.resolve();
   if (connectPromise) return connectPromise;
 
-  connectPromise = new Promise((resolve, reject) => {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    let sock;
-    try {
-      sock = new WebSocket(`${proto}://${location.host}/ws`);
-    } catch (e) {
-      return reject(new Error('Не удалось открыть соединение'));
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  let sock;
+  try { sock = new WebSocket(`${proto}://${location.host}/ws`); }
+  catch { return Promise.reject(new Error('Не удалось открыть соединение')); }
+  ws = sock;
+  let resolveAttempt, rejectAttempt, settled = false;
+  const attempt = new Promise((resolve, reject) => { resolveAttempt = resolve; rejectAttempt = reject; });
+  connectPromise = attempt;
+
+  function release(error, closeSocket = true) {
+    if (ws !== sock) return;
+    clearTimeout(timer);
+    ws = null;
+    if (connectPromise === attempt) connectPromise = null;
+    sock.onopen = sock.onerror = sock.onclose = sock.onmessage = null;
+    if (!settled) { settled = true; rejectAttempt(error); }
+    if (closeSocket) { try { sock.close(); } catch { /* already closed */ } }
+    clearMenuBusy();
+    if (S.screen === 'lobby' || S.screen === 'hud' || S.screen === 'results') {
+      showMenu('Связь с сервером потеряна. Обнови страницу.');
     }
-    ws = sock;
-    const timer = setTimeout(() => reject(new Error('Сервер не отвечает')), 8000);
+  }
+  const timer = setTimeout(() => release(new Error('Сервер не отвечает')), 8000);
+  sock.onopen = () => {
+    if (ws !== sock || settled) return;
+    settled = true;
+    clearTimeout(timer);
+    if (connectPromise === attempt) connectPromise = null;
+    resolveAttempt();
+  };
+  sock.onerror = () => release(new Error('Не удалось подключиться к серверу'));
+  sock.onclose = () => release(new Error('Соединение закрыто'), false);
+  sock.onmessage = (ev) => {
+    if (ws !== sock) return;
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch { return; }
+    onMessage(msg);
+  };
 
-    sock.onopen = () => { clearTimeout(timer); resolve(); };
-    sock.onerror = () => { clearTimeout(timer); reject(new Error('Не удалось подключиться к серверу')); };
-    sock.onclose = () => {
-      clearTimeout(timer);
-      ws = null;
-      connectPromise = null;
-      clearMenuBusy();
-      if (S.screen === 'lobby' || S.screen === 'hud') {
-        showMenu('Связь с сервером потеряна. Обнови страницу.');
-      }
-    };
-    sock.onmessage = (ev) => {
-      let msg;
-      try { msg = JSON.parse(ev.data); } catch { return; }
-      onMessage(msg);
-    };
-  });
-
-  connectPromise.catch(() => { connectPromise = null; });
-  return connectPromise;
+  return attempt;
 }
 
 function onMessage(msg) {
@@ -165,6 +181,7 @@ function onMessage(msg) {
       S.roomState = msg.state;
       for (const p of msg.players) rememberPlayer(p);
       if (S.screen === 'lobby') renderLobbyPlayers();
+      if (S.screen === 'results') updateResultActions();
       break;
     }
     case 'start': startGame(msg); break;
@@ -304,7 +321,7 @@ function updateLobbyIdentity() {
 function readName() {
   const raw = $('name').value.trim();
   const name = raw || 'Яйцо';
-  try { localStorage.setItem('egg-name', name); } catch { /* ignore */ }
+  writeStored('egg-name', name);
   return name;
 }
 
@@ -388,7 +405,8 @@ let levelView = null;
 const worldMeshes = [];
 
 function readNum(key, fallback, min, max) {
-  const v = parseFloat(localStorage.getItem(key));
+  const stored = readStored(key);
+  const v = typeof stored === 'string' && stored.trim() ? Number(stored) : NaN;
   if (!Number.isFinite(v)) return fallback;
   return Math.min(max, Math.max(min, v));
 }
@@ -409,7 +427,7 @@ let fpsSamples = 0;
 let fpsValue = 0;
 let lowStreak = 0;
 let highStreak = 0;
-let fpsVisible = localStorage.getItem('egg-fps') !== '0';
+let fpsVisible = readStored('egg-fps') !== '0';
 
 function initRenderer() {
   if (renderer) return;
@@ -1066,21 +1084,41 @@ function startGame(msg) {
   S.timeLeft = msg.timeLeft;
   S.snapshotAt = S.snapshotReceived = S.viewTime = 0;
   const me = S.me;
+  const arena = msg.arena || S.arena;
+  const sameRound = S.arena?.id === arena.id && S.round === msg.round;
+  const sameLife = !!msg.resume && sameRound
+    && msg.you.lifeId != null && me.lifeId === msg.you.lifeId;
+  const resetResources = !sameLife || msg.you.respawned === true;
+  const wasAlive = me.alive;
+  const alive = msg.you.alive !== false && msg.you.alive !== 0;
+  S.round = msg.round;
+  me.lifeId = msg.you.lifeId ?? null;
   me.x = msg.you.x; me.y = msg.you.y; me.z = msg.you.z; me.yaw = msg.you.yaw; me.pitch = msg.you.pitch || 0;
-  me.vy = 0;
-  me.onGround = true;
-  me.hp = 100;
-  me.energy = 100;
+  if (resetResources || !alive) { me.vy = 0; me.onGround = true; }
+  me.hp = Number.isFinite(msg.you.hp) ? msg.you.hp : alive ? 100 : 0;
   me.grenades = msg.you.grenades ?? 2;
-  me.grenadeReadyAt = me.grenadeThrowAt = 0;
-  me.sprinting = me.sprintExhausted = false;
-  me.alive = true;
-  me.kills = 0;
-  me.deaths = 0;
-  me.reloading = false;
-  me.lastShot = 0;
-  me.deadUntil = 0;
-  me.deadAt = 0;
+  me.sprinting = false;
+  me.alive = alive;
+  if (resetResources) {
+    me.energy = 100;
+    me.grenadeReadyAt = me.grenadeThrowAt = 0;
+    me.sprintExhausted = false;
+    me.reloading = false;
+    me.reloadWeapon = null;
+    me.reloadEnd = 0;
+    me.lastShot = 0;
+  }
+  if (!msg.resume) { me.kills = 0; me.deaths = 0; }
+  if (alive) {
+    me.deadUntil = me.deadAt = 0;
+    me.killedBy = null;
+  } else {
+    me.deadUntil = performance.now() + Math.max(0, Number(msg.you.respawnIn) || 0) * 1000;
+    if (wasAlive || !me.deadAt) me.deadAt = performance.now();
+    me.reloading = false;
+    me.reloadWeapon = null;
+  }
+  me.respawnAsked = false;
   me.zoom = false;
   me.firing = false;
 
@@ -1089,9 +1127,11 @@ function startGame(msg) {
     S.slots = Object.keys(msg.weapons);
   }
   if (S.slots.length) {
-    me.weapon = S.slots[0];
-    me.ammo = {};
-    for (const id of S.slots) me.ammo[id] = S.weapons[id].mag;
+    if (resetResources) {
+      if (!msg.resume || !sameRound || !S.slots.includes(me.weapon)) me.weapon = S.slots[0];
+      me.ammo = {};
+      for (const id of S.slots) me.ammo[id] = S.weapons[id].mag;
+    } else if (!S.slots.includes(me.weapon)) me.weapon = S.slots[0];
     renderWeaponBar();
   }
   resetZoom();
@@ -1099,9 +1139,10 @@ function startGame(msg) {
   if (msg.players) {
     S.lobbyPlayers = msg.players;
     for (const p of msg.players) rememberPlayer(p);
+    const mine = msg.players.find(p => p.i === S.id);
+    if (mine) { me.kills = mine.k; me.deaths = mine.d; }
   }
 
-  const arena = msg.arena || S.arena;
   if (scene) clearRemotes();
   if (!scene) {
     initThree(arena);
@@ -1141,9 +1182,11 @@ function startGame(msg) {
   S.mapId = arena.id;
   $('mapName').textContent = arena.name;
 
-  $('death').classList.add('hidden');
+  $('death').classList.toggle('hidden', me.alive);
+  if (!me.alive) $('deathTitle').textContent = 'Вы погибли';
   $('pause').classList.toggle('hidden', S.locked);
-  $('reloadHint').classList.add('hidden');
+  $('reloadHint').classList.toggle('hidden', !me.reloading);
+  if (me.reloading && S.weapons[me.reloadWeapon]) $('reloadHint').textContent = `Перезарядка ${S.weapons[me.reloadWeapon].name}…`;
   $('vignette').classList.remove('hit');
   $('killfeed').innerHTML = '';
   $('results').classList.add('hidden');
@@ -1285,16 +1328,21 @@ function updateMe(dt, visualDt = dt) {
 
   const previousY = me.y;
   me.vy -= 24 * dt;
-  me.y += me.vy * dt;
-  if (me.vy > 0) {
+  const vertical = ArenaGeometry.moveVertical(S.arena, me, me.vy * dt);
+  if (vertical) {
+    me.x = vertical.x; me.y = vertical.y; me.z = vertical.z;
+    me.vy *= vertical.velocityScale;
+    if ((vertical.ceiling && me.vy > 0) || vertical.blocked) me.vy = 0;
+  } else me.y += me.vy * dt;
+  if (!vertical && me.vy > 0) {
     const ceiling = ArenaGeometry.ceilingHeight(S.arena, me.x, me.z, previousY + S.arena.playerCollision.height);
     if (me.y + S.arena.playerCollision.height > ceiling) { me.y = ceiling - S.arena.playerCollision.height; me.vy = 0; }
   }
 
   const ground = surfaceHeight(me.x, me.z, Math.max(previousY + S.arena.playerCollision.maxStepHeight, me.y));
-  if (me.y <= ground) {
+  if (vertical ? vertical.grounded : me.y <= ground) {
     if (!me.onGround) playFootstep(0.22, 0, 0.82, 0, footMaterial(me.x, me.y, me.z));
-    me.y = ground;
+    if (!vertical) me.y = ground;
     me.vy = 0;
     me.onGround = true;
   } else {
@@ -1873,9 +1921,11 @@ function onKill(msg) {
 }
 
 function onRespawn(msg) {
-  clearCombat();
   if (S.screen !== 'hud') return;
   const me = S.me;
+  if (msg.you.lifeId != null && me.lifeId === msg.you.lifeId && me.alive) return;
+  clearCombat();
+  me.lifeId = msg.you.lifeId ?? null;
   me.x = msg.you.x;
   me.y = msg.you.y;
   me.z = msg.you.z;
@@ -1892,13 +1942,22 @@ function onRespawn(msg) {
   refillAll();
   me.reloading = false;
   me.reloadWeapon = null;
+  me.reloadEnd = 0;
+  me.lastShot = 0;
   me.deadUntil = 0;
+  me.deadAt = 0;
   me.killedBy = null;
   me.respawnAsked = false;
   resetZoom();
   $('death').classList.add('hidden');
   $('reloadHint').classList.add('hidden');
   if (!S.locked) $('pause').classList.remove('hidden');
+}
+
+function updateResultActions() {
+  const isHost = S.id === S.hostId;
+  $('btnAgain').classList.toggle('hidden', !isHost);
+  $('againWait').classList.toggle('hidden', isHost);
 }
 
 function onEnd(msg) {
@@ -1942,9 +2001,7 @@ function onEnd(msg) {
     ? `Победитель: ${msg.scores[0].n}`
     : '';
 
-  const isHost = S.id === S.hostId;
-  $('btnAgain').classList.toggle('hidden', !isHost);
-  $('againWait').classList.toggle('hidden', isHost);
+  updateResultActions();
 
   show('results');
 }
@@ -2440,7 +2497,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'F3') {
     e.preventDefault();
     fpsVisible = !fpsVisible;
-    localStorage.setItem('egg-fps', fpsVisible ? '1' : '0');
+    writeStored('egg-fps', fpsVisible ? '1' : '0');
     updateFpsLabel();
   }
 
@@ -2607,7 +2664,7 @@ $('sensVal').textContent = SETTINGS.sens.toFixed(2);
 $('sensRange').addEventListener('input', (e) => {
   SETTINGS.sens = parseFloat(e.target.value);
   $('sensVal').textContent = SETTINGS.sens.toFixed(2);
-  localStorage.setItem('egg-sens', String(SETTINGS.sens));
+  writeStored('egg-sens', SETTINGS.sens);
 });
 
 $('adsSensRange').value = String(SETTINGS.ads);
@@ -2615,13 +2672,13 @@ $('adsSensVal').textContent = SETTINGS.ads.toFixed(2);
 $('adsSensRange').addEventListener('input', (e) => {
   SETTINGS.ads = parseFloat(e.target.value);
   $('adsSensVal').textContent = SETTINGS.ads.toFixed(2);
-  localStorage.setItem('egg-ads', String(SETTINGS.ads));
+  writeStored('egg-ads', SETTINGS.ads);
 });
 
 $('fpsCheck').checked = fpsVisible;
 $('fpsCheck').addEventListener('change', (e) => {
   fpsVisible = e.target.checked;
-  localStorage.setItem('egg-fps', fpsVisible ? '1' : '0');
+  writeStored('egg-fps', fpsVisible ? '1' : '0');
   updateFpsLabel();
 });
 
@@ -2706,7 +2763,7 @@ $('boot')?.classList.add('hidden');
     requestAnimationFrame(frame);
   }
 
-  const saved = localStorage.getItem('egg-name');
+  const saved = readStored('egg-name');
   if (saved) $('name').value = saved;
   updateLobbyIdentity();
 
@@ -2716,7 +2773,7 @@ $('boot')?.classList.add('hidden');
 
   if (room) $('code').value = room;
 
-  const savedName = localStorage.getItem('egg-name');
+  const savedName = readStored('egg-name');
 
   if (room && (params.get('autojoin') === '1' || savedName)) {
     setTimeout(() => joinRoom(), 250);

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM || chromium.executablePath(),
-  headless: true, args: ['--no-sandbox','--enable-unsafe-swiftshader','--use-angle=swiftshader'],
+  headless: true, args: ['--no-sandbox',...(process.env.EGG_BROWSER_GPU === 'hardware' ? [] : ['--enable-unsafe-swiftshader', '--use-angle=swiftshader'])],
 });
 const base = process.env.BASE || 'http://127.0.0.1:3160';
 try {

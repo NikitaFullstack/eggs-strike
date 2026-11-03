@@ -1,23 +1,39 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 const base = process.env.BASE || 'http://127.0.0.1:3191';
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || chromium.executablePath(), headless: true, args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'] });
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || chromium.executablePath(), headless: true, args: ['--no-sandbox', ...(process.env.EGG_BROWSER_GPU === 'hardware' ? [] : ['--enable-unsafe-swiftshader', '--use-angle=swiftshader']), '--disable-background-timer-throttling', '--disable-renderer-backgrounding'] });
 try {
   const context = await browser.newContext({ viewport: { width: 1100, height: 750 } });
   await context.route(/^https:\/\/(cdn.jsdelivr.net|esm.sh)\//, route => route.abort());
   const host = await context.newPage(), guest = await context.newPage(), errors = [], assets = [];
   for (const page of [host, guest]) {
-    page.on('pageerror', error => errors.push(error.message));
+    page.on('pageerror', error => { errors.push(error.message); console.error('Training page error:', error.message); });
     page.on('response', response => { if (response.url().includes('/maps/training/')) assets.push([response.url(), response.status()]); });
   }
-  await host.goto(base + '/?debug=1'); await host.waitForFunction(() => !!window.__egg);
+  await host.goto(base + '/?debug=1'); await host.waitForFunction(() => !!window.__egg, null, { timeout: 60000 });
   const choice = host.locator('#menuMaps').getByRole('button', { name: 'Полигон', exact: true });
   assert.equal(await choice.count(), 1, 'A large ready-made map must be selectable alongside the henhouse');
   await choice.click(); assert.equal(await choice.getAttribute('aria-pressed'), 'true');
   await host.fill('#name', 'Полигон1'); await host.click('#btnPlay'); await host.click('#btnCreate');
   await host.waitForSelector('#lobby:not(.hidden)');
   const code = await host.locator('#lobbyCode').textContent();
-  await guest.goto(`${base}/?room=${code}&autojoin=1&debug=1`); await guest.waitForSelector('#lobby:not(.hidden)');
+  try {
+    await guest.goto(`${base}/?room=${code}&autojoin=1&debug=1`);
+    await guest.waitForFunction(() => !!window.__egg, null, { timeout: 60000 });
+    await guest.waitForSelector('#lobby:not(.hidden)');
+  } catch (error) {
+    let timer;
+    try {
+      const diagnostic = await Promise.race([
+        guest.evaluate(() => ({ ready: document.documentElement.dataset.gameReady, debugReady: !!window.__egg,
+          bootText: document.getElementById('bootText')?.textContent, menuMsg: document.getElementById('menuMsg')?.textContent })),
+        new Promise(resolve => { timer = setTimeout(() => resolve({ diagnostic: 'Guest main thread did not answer within 3 seconds' }), 3000); }),
+      ]);
+      console.error('Training guest failed to join:', JSON.stringify(diagnostic));
+    } catch (diagnosticError) { console.error('Training guest diagnostics unavailable:', diagnosticError.message); }
+    finally { clearTimeout(timer); }
+    throw error;
+  }
   assert.equal(await guest.locator('#roomMaps [aria-pressed="true"]').getAttribute('data-map'), 'training_grounds');
   await host.click('#btnStart');
   for (const page of [host, guest]) {
@@ -54,7 +70,7 @@ try {
   await host.waitForSelector('#lobby:not(.hidden)'); await host.click('#btnLeave');
   await host.waitForSelector('#menu:not(.hidden)');
   // Leaving a room intentionally reloads the public URL without diagnostic parameters.
-  await host.goto(base + '/?debug=1'); await host.waitForFunction(() => !!window.__egg);
+  await host.goto(base + '/?debug=1'); await host.waitForFunction(() => !!window.__egg, null, { timeout: 60000 });
   await host.locator('#menuMaps').getByRole('button', { name: 'Курятник', exact: true }).click();
   await host.click('#btnPlay'); await host.click('#btnCreate'); await host.waitForSelector('#lobby:not(.hidden)');
   await host.click('#btnStart'); await host.waitForSelector('#hud:not(.hidden)');

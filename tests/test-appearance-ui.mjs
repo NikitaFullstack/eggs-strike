@@ -5,7 +5,7 @@ import WebSocket from 'ws';
 const base = process.env.BASE || 'http://127.0.0.1:3000';
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM || chromium.executablePath(), headless: true,
-  args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
+  args: ['--no-sandbox', ...(process.env.EGG_BROWSER_GPU === 'hardware' ? [] : ['--enable-unsafe-swiftshader', '--use-angle=swiftshader']), '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
 });
 let guest;
 try {
@@ -90,4 +90,27 @@ try {
   await page.waitForFunction(() => window.__egg.S.players.size === 0);
   assert.deepEqual(errors, []);
   console.log('PASS: appearance UI, live 3D preview, saved choices, keyboard, mobile, peer sync, match model and room/resume');
+  await page.close();
+
+  // Privacy settings can deny even reading the localStorage property. The full
+  // game must still boot, keep a costume in memory and join a real match.
+  const blocked = await browser.newPage({ viewport: { width: 1100, height: 750 } });
+  blocked.on('pageerror', error => errors.push(error.message));
+  await blocked.addInitScript(() => Object.defineProperty(window, 'localStorage', {
+    configurable: true, get() { throw new DOMException('Storage is disabled', 'SecurityError'); },
+  }));
+  await blocked.goto(base + '/?debug=1');
+  await blocked.waitForFunction(() => !!window.__egg);
+  assert.equal(await blocked.evaluate(() => window.__egg.settings.sens), 1);
+  await blocked.click('#btnCustomize');
+  await blocked.click('[data-appearance="hat"][data-value="chef"]');
+  await blocked.click('#btnWardrobeDone');
+  assert.equal(await blocked.evaluate(() => window.__egg.S.appearance.hat), 'chef');
+  await blocked.fill('#name', 'Без сохранения');
+  await blocked.click('#btnPlay'); await blocked.click('#btnCreate');
+  await blocked.waitForSelector('#lobby:not(.hidden)');
+  await blocked.click('#btnStart'); await blocked.waitForSelector('#hud:not(.hidden)');
+  assert.equal(await blocked.evaluate(() => window.__egg.S.meta.get(window.__egg.S.id).appearance.hat), 'chef');
+  assert.deepEqual(errors, []);
+  console.log('PASS: blocked browser storage still permits boot, in-memory customization and a real match');
 } finally { guest?.terminate(); await browser.close(); }

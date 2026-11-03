@@ -180,7 +180,7 @@ function broadcast(room, obj, exceptId) {
 }
 
 function publicPlayer(p) {
-  return { i: p.id, n: p.name, c: p.appearance.color, appearance: p.appearance, k: p.kills, d: p.deaths, hp: p.hp, a: p.alive ? 1 : 0 };
+  return { i: p.id, n: p.name, c: p.appearance.color, appearance: p.appearance, k: p.kills, d: p.deaths, hp: p.hp, a: p.alive && !p.inLobby ? 1 : 0 };
 }
 
 function lobbyState(room) {
@@ -215,7 +215,7 @@ function placeAtSpawn(room,p) {
 
 function respawnPlayer(room, p) {
   placeAtSpawn(room,p);
-  send(p.ws,{t:'respawn',you:{x:p.x,y:p.y,z:p.z,yaw:p.yaw,pitch:p.pitch,grenades:p.grenades}});
+  send(p.ws,{t:'respawn',you:{x:p.x,y:p.y,z:p.z,yaw:p.yaw,pitch:p.pitch,grenades:p.grenades,lifeId:p.spawnedAt}});
 }
 
 function pickSpawn(room, player) {
@@ -268,7 +268,7 @@ function startMatch(room) {
       t: 'start',
       timeLeft: MATCH_TIME,
       round: room.round,
-      you: { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch:p.pitch, grenades:p.grenades },
+      you: { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch:p.pitch, grenades:p.grenades, lifeId:p.spawnedAt },
       arena: map,
       mapName: map.name,
       weapons: WEAPONS,
@@ -302,10 +302,11 @@ function tickRoom(room) {
 
 function tickRoomInner(room) {
   const now = Date.now();
-  const dt = 0.05;
-  room.timeLeft = Math.max(0, room.timeLeft - dt);
+  const deadline = room.startedAt + MATCH_TIME * 1000;
+  room.timeLeft = Math.max(0, Math.min(MATCH_TIME, (deadline - now) / 1000));
 
-  tickGrenades(room, now);
+  tickGrenades(room, Math.min(now, deadline));
+  if (room.timeLeft <= 0) { endMatch(room); return; }
 
   // респавны
   for (const p of room.players.values()) {
@@ -323,7 +324,7 @@ function tickRoomInner(room) {
       g: room.grenades.map(grenade => publicGrenade(grenade, now)),
       p: [...room.players.values()].map((p) => ({
         i: p.id, x: r2(p.x), y: r2(p.y), z: r2(p.z), yaw: r2(p.yaw), p: r2(p.pitch),
-        hp: Math.round(p.hp), a: p.alive ? 1 : 0, im:p.immuneUntil>now?1:0, k: p.kills, d: p.deaths,
+        hp: Math.round(p.hp), a: p.alive && !p.inLobby ? 1 : 0, im:p.immuneUntil>now?1:0, k: p.kills, d: p.deaths,
         grenades: p.grenades,
       })),
     };
@@ -333,7 +334,6 @@ function tickRoomInner(room) {
     broadcast(room, snapshot);
   }
 
-  if (room.timeLeft <= 0) endMatch(room);
 }
 
 const r2 = (n) => Math.round(n * 100) / 100;
@@ -398,8 +398,10 @@ function raySphere(o, d, c, rad) {
   const cc = ox * ox + oy * oy + oz * oz - rad * rad;
   const disc = b * b - cc;
   if (disc < 0) return Infinity;
-  const t = -b - Math.sqrt(disc);
-  return t >= 0 ? t : Infinity;
+  const root = Math.sqrt(disc), near = -b - root, far = -b + root;
+  // Players can overlap in narrow passages. A ray starting inside an endcap
+  // still intersects its exit surface, just like the capsule's cylinder does.
+  return near >= 0 ? near : far >= 0 ? far : Infinity;
 }
 
 function rayAABB(o, d, min, max) {
@@ -698,7 +700,7 @@ function onMessage(ws, msg) {
         t: 'start',
         timeLeft: room.timeLeft,
         round: room.round,
-        you: { x: player.x, y: player.y, z: player.z, yaw: player.yaw, pitch:player.pitch, grenades:player.grenades },
+        you: { x: player.x, y: player.y, z: player.z, yaw: player.yaw, pitch:player.pitch, grenades:player.grenades, lifeId:player.spawnedAt },
         arena: map,
         mapName: map.name,
         weapons: WEAPONS,
@@ -730,7 +732,7 @@ function onMessage(ws, msg) {
       break;
     }
     case 'input': {
-      if (room.state !== 'playing' || !p.alive) return;
+      if (room.state !== 'playing' || !p.alive || p.inLobby) return;
       const x = Number(msg.x), y = Number(msg.y), z = Number(msg.z);
       const yaw = Number(msg.yaw), pitch = Number(msg.pitch);
       if (![x, y, z, yaw, pitch].every(Number.isFinite)) return;
@@ -752,24 +754,25 @@ function onMessage(ws, msg) {
     }
     case 'lobby': {
       if (room.state === 'playing') {
+        // Pausing hides the player; it does not end their life, cancel a thrown
+        // grenade or grant a fresh loadout and immunity when they return.
         p.inLobby = true;
-        p.alive = false;
-        p.respawnAt = 0;
-        room.grenades = room.grenades.filter(grenade => grenade.owner !== p.id);
       }
       broadcastLobby(room);
       break;
     }
     case 'resume': {
       if (room.state !== 'playing' || !p.inLobby) return;
-      placeAtSpawn(room,p);
-      const spawn={x:p.x,y:p.y,z:p.z,yaw:p.yaw,pitch:p.pitch,grenades:p.grenades};
       p.inLobby = false;
-      p.lastShot = 0;
       const map = MAPS[room.mapId];
+      const now = Date.now(), respawned = !p.alive && now >= p.respawnAt;
+      if (respawned) placeAtSpawn(room, p);
+      else if (p.alive && (ArenaGeometry.blocks(map, p.x, p.z, p.y) || (Number.isFinite(map.killY) && p.y < map.killY))) Object.assign(p, pickSpawn(room, p));
+      const you = { x:p.x, y:p.y, z:p.z, yaw:p.yaw, pitch:p.pitch, grenades:p.grenades,
+        hp:p.hp, alive:p.alive, lifeId:p.spawnedAt, respawned, respawnIn:p.alive ? 0 : Math.max(0, (p.respawnAt - now) / 1000) };
       send(ws, {
-        t: 'start', timeLeft: room.timeLeft, round: room.round,
-        you: spawn, arena: map, mapName: map.name, weapons: WEAPONS,
+        t: 'start', resume: true, timeLeft: room.timeLeft, round: room.round,
+        you, arena: map, mapName: map.name, weapons: WEAPONS,
         players: [...room.players.values()].map(publicPlayer),
       });
       broadcastLobby(room);
