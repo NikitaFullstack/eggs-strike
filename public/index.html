@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>ЯЙЦА — перестрелка</title>
+<link rel="stylesheet" href="style.css?v=20261103h" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥚</text></svg>" />
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="boot" class="boot">
+  <div class="boot-inner">
+    <div class="boot-egg">🥚</div>
+    <div class="boot-spinner"></div>
+    <p id="bootText">Загрузка…</p>
+    <button id="bootRetry" class="btn hidden">Обновить страницу</button>
+  </div>
+</div>
+
+<div id="vignette"></div>
+
+<!-- МЕНЮ -->
+<section id="menu" class="screen menu-screen">
+  <header class="lobby-header">
+    <a class="brand" href="/" aria-label="Egg Strike — главная"><span class="brand-mark">e.</span><span>EGG<span class="brand-strike">STRIKE</span></span></a>
+  </header>
+  <div class="menu-bottom">
+    <div class="menu-controls panel">
+      <p class="panel-description">До 8 игроков · 5 минут</p>
+      <label class="field">
+        <span>Имя</span>
+        <input id="name" maxlength="12" placeholder="Яйцо" autocomplete="off" spellcheck="false" />
+      </label>
+
+      <button id="btnPlay" class="btn btn-primary btn-play">Играть</button>
+
+      <div id="playMenu" class="play-menu hidden">
+        <button id="btnCreate" class="btn">Создать комнату</button>
+        <div class="divider"><span>или по коду</span></div>
+        <div class="join-row">
+          <input id="code" maxlength="4" placeholder="КОД" autocomplete="off" spellcheck="false" />
+          <button id="btnJoin" class="btn">Войти</button>
+        </div>
+        <button id="btnPlayBack" class="btn btn-ghost">Назад</button>
+      </div>
+
+      <p id="menuMsg" class="msg"></p>
+    </div>
+
+    <p class="hint">WASD — бег · Shift — спринт · ЛКМ — огонь · ПКМ — прицеливание · R — перезарядка · Tab — счёт</p>
+  </div>
+
+  <div class="menu-side">
+    <button id="btnSettings" class="btn btn-ghost" title="Настройки" aria-label="Настройки">⚙</button>
+    <button id="btnFullscreen" class="btn btn-ghost" title="На весь экран">⛶</button>
+  </div>
+</section>
+
+<!-- ЛОББИ -->
+<section id="lobby" class="screen hidden">
+  <header class="lobby-header"><a class="brand" href="/"><span class="brand-mark">e.</span><span>EGG<span class="brand-strike">STRIKE</span></span></a></header>
+  <div class="room-controls panel">
+    <div class="panel-heading"><span class="eyebrow">Комната</span><button id="btnLeave" class="room-leave" title="Выйти из комнаты">Выйти из комнаты</button></div>
+    <div class="code-box"><span id="lobbyCode">----</span><button id="btnCopy" class="btn btn-small">Пригласить</button></div>
+    <p class="lobby-sub">Отправь друзьям код или ссылку</p>
+    <div class="invite-row"><input id="lobbyLink" readonly aria-label="Ссылка-приглашение" /><button id="btnCopy2" class="btn btn-small" aria-label="Копировать ссылку">Копировать</button></div>
+    <div class="players-head"><span>В комнате</span><span id="playerCount">—</span></div>
+    <ul id="playerList" class="player-list"></ul>
+    <button id="btnResumeMatch" class="btn btn-primary hidden">Вернуться в бой</button>
+    <button id="btnStart" class="btn btn-primary">Начать бой</button>
+    <p id="lobbyWait" class="msg hidden">Ждём, пока хост начнёт бой…</p>
+    <p id="lobbyMsg" class="msg" role="status"></p>
+  </div>
+</section>
+
+<div id="lobbyShowcase" class="lobby-showcase">
+  <div id="characterLabel" class="character-label"><strong id="characterName">Яйцо</strong></div>
+  <section class="map-section" aria-labelledby="mapsTitle">
+    <div class="maps-heading"><h2 id="mapsTitle">Карта</h2><p id="mapHint"></p></div>
+    <div id="menuMaps" class="map-grid"></div>
+    <div id="roomMaps" class="map-grid hidden"></div>
+  </section>
+  <footer class="lobby-footer"><span>WASD <b>ДВИЖЕНИЕ</b> <span class="footer-dot">·</span> SHIFT <b>СПРИНТ</b> <span class="footer-dot">·</span> ЛКМ <b>ОГОНЬ</b> <span class="footer-dot">·</span> SPACE <b>ПРЫЖОК</b></span></footer>
+</div>
+
+<!-- HUD -->
+<section id="hud" class="hidden">
+  <button id="btnGameMenu" class="game-menu" aria-label="Меню игры" title="Меню игры · Esc">☰ Меню · Esc</button>
+  <div id="minimap" class="minimap"><canvas id="minimapCanvas" width="360" height="360"></canvas></div>
+
+  <div id="weaponBar" class="weapon-bar"></div>
+
+  <div id="mapName" class="match-map-name"></div>
+  <div id="timer" class="timer">5:00</div>
+  <div id="fps" class="fps"></div>
+
+  <div id="healthWrap" class="health">
+    <span class="health-icon">🥚</span>
+    <div class="health-bar"><div id="healthFill" class="health-fill"></div></div>
+    <span id="healthNum">100</span>
+  </div>
+
+  <div id="stamina" class="stamina" role="progressbar" aria-label="Энергия спринта" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+    <div class="stamina-heading"><span id="sprintStatus">Shift · Спринт</span><span id="staminaNum">100%</span></div>
+    <div class="stamina-bar"><div id="staminaFill" class="stamina-fill"></div></div>
+  </div>
+
+  <span id="ammo" class="ammo">30</span>
+
+  <ul id="killfeed" class="killfeed"></ul>
+
+  <div id="weaponToast" class="weapon-toast"></div>
+  <div id="scope" class="scope hidden"></div>
+
+  <div id="crosshair" class="crosshair"><i></i><i></i><i></i><i></i></div>
+  <div id="hitmarker" class="hitmarker"><i></i><i></i><i></i><i></i></div>
+
+  <div id="death" class="death hidden">
+    <p id="deathTitle" class="death-title">Вы погибли</p>
+    <p id="deathSub" class="death-sub"></p>
+    <div class="death-bar"><i id="deathFill"></i></div>
+    <button id="btnStuck" class="stuck hidden">Переподключиться</button>
+  </div>
+
+  <div id="pause" class="pause hidden">
+    <p>Пауза</p>
+    <span>Бой продолжается</span>
+    <div class="pause-actions">
+      <button id="btnResumeGame" class="stuck">Продолжить</button>
+      <button id="btnPauseSettings" class="stuck">⚙ Настройки</button>
+      <button id="btnPauseFullscreen" class="stuck">⛶ На весь экран</button>
+      <button id="btnPauseLobby" class="stuck">В комнату</button>
+      <button id="btnPauseLeave" class="stuck pause-exit" title="Покинуть комнату и открыть главное меню">Выйти из игры</button>
+    </div>
+  </div>
+
+  <div id="reloadHint" class="reload-hint hidden">Перезарядка…</div>
+</section>
+
+<!-- СЧЁТ ПО TAB -->
+<div id="scorePanel" class="score-panel hidden">
+  <div class="score-box">
+    <h3>Счёт</h3>
+    <div class="score-head"><span></span><span>Игрок</span><span>Убийства</span><span>Смерти</span></div>
+    <ul id="scoreboard" class="scoreboard"></ul>
+  </div>
+</div>
+
+<!-- НАСТРОЙКИ -->
+<div id="settings" class="settings hidden">
+  <div class="settings-panel">
+    <h3>Настройки</h3>
+
+    <label class="setting">
+      <span>Чувствительность мыши <b id="sensVal">1.00</b></span>
+      <input id="sensRange" type="range" min="0.2" max="3" step="0.05" value="1" />
+    </label>
+
+    <label class="setting">
+      <span>Чувствительность в прицеле <b id="adsSensVal">0.55</b></span>
+      <input id="adsSensRange" type="range" min="0.2" max="1.5" step="0.05" value="0.55" />
+    </label>
+
+    <label class="setting check">
+      <input id="fpsCheck" type="checkbox" checked />
+      <span>Показывать FPS</span>
+    </label>
+
+    <button id="btnSettingsClose" class="btn btn-primary">Готово</button>
+  </div>
+</div>
+
+<!-- РЕЗУЛЬТАТЫ -->
+<section id="results" class="screen hidden">
+  <div class="menu-inner">
+    <h2 class="results-title">Бой окончен</h2>
+    <p id="winner" class="winner"></p>
+    <div class="panel">
+      <ul id="resultList" class="result-list"></ul>
+      <button id="btnAgain" class="btn btn-primary">Ещё раунд</button>
+      <p id="againWait" class="msg hidden">Ждём хоста…</p>
+      <button id="btnToLobby" class="btn">В лобби</button>
+      <button id="btnMenu" class="btn btn-ghost">В меню</button>
+    </div>
+  </div>
+</section>
+
+<script src="henhouse-level.js?v=20261103h"></script>
+<script src="arena-geometry.js?v=20261103h"></script>
+<script src="mesh-world.js?v=20261103h"></script>
+<script src="henhouse-dressing.js?v=20261103h"></script>
+<script src="coop-world.js?v=20261103h"></script>
+<script src="combat-effects.js?v=20261103h"></script>
+<script type="module" src="game.js?v=20261103h"></script>
+<script>
+  (function () {
+    var retry = document.getElementById('bootRetry');
+    if (retry) retry.addEventListener('click', function () { location.reload(); });
+
+    setTimeout(function () {
+      if (document.documentElement.dataset.gameReady === '1') return;
+      var text = document.getElementById('bootText');
+      if (text) text.textContent = 'Долго грузимся… Проверь соединение';
+      if (retry) retry.classList.remove('hidden');
+    }, 12000);
+
+    window.addEventListener('error', function () {
+      if (document.documentElement.dataset.gameReady === '1') return;
+      var text = document.getElementById('bootText');
+      if (text) text.textContent = 'Не удалось загрузить игру';
+      if (retry) retry.classList.remove('hidden');
+    });
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "egg-strike",
+  "version": "1.0.0",
+  "description": "Онлайн-перестрелка яйцами: комнаты по коду, 3-4 игрока, 5 минут",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["game", "multiplayer", "threejs", "websocket"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "three": "^0.187.0",
+    "ws": "^8.22.1"
+  }
+}

@@ -1,0 +1,156 @@
+{
+  "id": "training_grounds",
+  "name": "Полигон",
+  "mesh": "/maps/training/scene.json",
+  "texture": "/maps/training/texture.png",
+  "preview": "/maps/training/preview.svg",
+  "half": 34.357855,
+  "halfX": 34.357853,
+  "halfZ": 34.357855,
+  "bounds": {
+    "minX": -34.357853,
+    "maxX": 34.357853,
+    "minZ": -34.357855,
+    "maxZ": 34.357855,
+    "floorY": -20,
+    "maxY": 19.200127
+  },
+  "killY": -4,
+  "playerCollision": {
+    "radius": 0.34,
+    "height": 1.15,
+    "maxWalkableSlopeDegrees": 35,
+    "maxStepHeight": 0.23,
+    "walkSpeedMetersPerSecond": 4.5
+  },
+  "spawnRules": {
+    "initialImmunitySeconds": 1.5,
+    "minimumEnemyDistanceOnRespawn": 5,
+    "avoidEnemyLineOfSight": true,
+    "fallback": "pick furthest free spawn"
+  },
+  "players": {
+    "min": 3,
+    "max": 4
+  },
+  "theme": {
+    "sky": 12179432,
+    "fog": 13885416,
+    "floor": 7506841,
+    "wall": 6323340,
+    "accent": 5096660
+  },
+  "crates": [],
+  "walls": [],
+  "platforms": [],
+  "ramps": [],
+  "stairs": [],
+  "rounds": [],
+  "decor": [],
+  "spawns": [
+    {
+      "id": "T1",
+      "x": -20,
+      "y": 2.318366000000001,
+      "z": 0,
+      "target": [
+        0,
+        3,
+        0
+      ],
+      "color": "#ffd23f"
+    },
+    {
+      "id": "T2",
+      "x": 20,
+      "y": 2.318366000000001,
+      "z": -16,
+      "target": [
+        0,
+        3,
+        0
+      ],
+      "color": "#4fc3f7"
+    },
+    {
+      "id": "T3",
+      "x": -20,
+      "y": 6.772054999999998,
+      "z": 20,
+      "target": [
+        0,
+        3,
+        0
+      ],
+      "color": "#ff6f91"
+    },
+    {
+      "id": "T4",
+      "x": 20,
+      "y": 6.331416205863853,
+      "z": 20,
+      "target": [
+        0,
+        3,
+        0
+      ],
+      "color": "#9be564"
+    },
+    {
+      "id": "T5",
+      "x": -12,
+      "y": 7.363855000000001,
+      "z": -24,
+      "target": [
+        0,
+        3,
+        0
+      ],
+      "color": "#ffa94d"
+    },
+    {
+      "id": "T6",
+      "x": 12,
+      "y": 2.3183659999999975,
+      "z": 4,
+      "target": [
+        0,
+        3,
+        0
+      ],
+      "color": "#b197fc"
+    },
+    {
+      "id": "T7",
+      "x": -24,
+      "y": 6.222334,
+      "z": 8,
+      "target": [
+        0,
+        3,
+        0
+      ],
+      "color": "#63e6be"
+    },
+    {
+      "id": "T8",
+      "x": 8,
+      "y": 2.318366000000001,
+      "z": -20,
+      "target": [
+        0,
+        3,
+        0
+      ],
+      "color": "#ff8787"
+    }
+  ],
+  "attribution": {
+    "title": "Three.js Collision World",
+    "author": "Paul Brunt",
+    "license": "MIT",
+    "source": "https://github.com/mrdoob/three.js/blob/87948e3fb1d14ad5c8e27b67def8e479780b0292/examples/models/gltf/collision-world.glb",
+    "sha256": "07524c7fd5829c6dc354d0b129f78943c47a8737d141496c6d611f5ee2d00864",
+    "scale": 2
+  }
+}

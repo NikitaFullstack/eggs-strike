@@ -1,0 +1,552 @@
+{
+  "schemaVersion": "1.0",
+  "mapId": "henhouse_ffa_01",
+  "displayName": "Курятник",
+  "theme": "cartoon chicken eggs with tiny guns; farm courtyard, wood, hay, metal feeder",
+  "gameMode": "FFA",
+  "players": {
+    "min": 3,
+    "max": 4
+  },
+  "coordinateSystem": {
+    "units": "meters",
+    "upAxis": "Y",
+    "groundPlane": "XZ",
+    "origin": [
+      0,
+      0,
+      0
+    ],
+    "orientation": {
+      "east": "+X",
+      "west": "-X",
+      "south": "+Z",
+      "north": "-Z"
+    },
+    "positions": "[x,y,z]",
+    "boxSize": "[widthX,heightY,depthZ]",
+    "boxPositionsReferTo": "ground center (bottom at y=0), except catwalk decks use topY"
+  },
+  "arena": {
+    "widthX": 20.0,
+    "depthZ": 16.0,
+    "floorY": 0.0,
+    "minX": -10.0,
+    "maxX": 10.0,
+    "minZ": -8.0,
+    "maxZ": 8.0,
+    "boundaryWalls": {
+      "thickness": 0.3,
+      "height": 3.0,
+      "collidable": true
+    },
+    "groundMaterial": "packed_dirt"
+  },
+  "playerCollision": {
+    "radius": 0.34,
+    "height": 1.15,
+    "maxWalkableSlopeDegrees": 35,
+    "maxStepHeight": 0.23,
+    "walkSpeedMetersPerSecond": 4.5
+  },
+  "spawnRules": {
+    "initialImmunitySeconds": 1.5,
+    "minimumEnemyDistanceOnRespawn": 5.0,
+    "avoidEnemyLineOfSight": true,
+    "fallback": "pick furthest free spawn"
+  },
+  "spawns": [
+    {
+      "id": "S1",
+      "position": [
+        -5.9,
+        0,
+        -5.8
+      ],
+      "facingTarget": [
+        0,
+        0.75,
+        0
+      ],
+      "label": "NW",
+      "color": "#DC4E59"
+    },
+    {
+      "id": "S2",
+      "position": [
+        5.9,
+        0,
+        -5.8
+      ],
+      "facingTarget": [
+        0,
+        0.75,
+        0
+      ],
+      "label": "NE",
+      "color": "#357ECA"
+    },
+    {
+      "id": "S3",
+      "position": [
+        -5.9,
+        0,
+        5.8
+      ],
+      "facingTarget": [
+        0,
+        0.75,
+        0
+      ],
+      "label": "SW",
+      "color": "#36A46E"
+    },
+    {
+      "id": "S4",
+      "position": [
+        5.9,
+        0,
+        5.8
+      ],
+      "facingTarget": [
+        0,
+        0.75,
+        0
+      ],
+      "label": "SE",
+      "color": "#D4A22F"
+    }
+  ],
+  "obstacles": [
+    {
+      "id": "C0",
+      "type": "cylinder",
+      "asset": "metal_feeder",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "radius": 1.55,
+      "height": 2.2,
+      "collidable": true
+    },
+    {
+      "id": "H1",
+      "type": "box",
+      "asset": "hay_bale",
+      "position": [
+        -3,
+        0,
+        -2.4
+      ],
+      "size": [
+        1.8,
+        1.35,
+        1.4
+      ],
+      "collidable": true
+    },
+    {
+      "id": "B1",
+      "type": "box",
+      "asset": "wood_crate",
+      "position": [
+        3,
+        0,
+        -2.4
+      ],
+      "size": [
+        1.6,
+        1.35,
+        1.6
+      ],
+      "collidable": true
+    },
+    {
+      "id": "B2",
+      "type": "box",
+      "asset": "wood_crate",
+      "position": [
+        -3,
+        0,
+        2.4
+      ],
+      "size": [
+        1.6,
+        1.35,
+        1.6
+      ],
+      "collidable": true
+    },
+    {
+      "id": "H2",
+      "type": "box",
+      "asset": "hay_bale",
+      "position": [
+        3,
+        0,
+        2.4
+      ],
+      "size": [
+        1.8,
+        1.35,
+        1.4
+      ],
+      "collidable": true
+    },
+    {
+      "id": "N1",
+      "type": "box",
+      "asset": "wood_barricade",
+      "position": [
+        0,
+        0,
+        -5.7
+      ],
+      "size": [
+        2.4,
+        1.5,
+        0.75
+      ],
+      "collidable": true
+    },
+    {
+      "id": "N2",
+      "type": "box",
+      "asset": "wood_barricade",
+      "position": [
+        0,
+        0,
+        5.7
+      ],
+      "size": [
+        2.4,
+        1.5,
+        0.75
+      ],
+      "collidable": true
+    },
+    {
+      "id": "P1",
+      "type": "box",
+      "asset": "spawn_barrier",
+      "position": [
+        -5.9,
+        0,
+        -4.1
+      ],
+      "size": [
+        1.8,
+        1.45,
+        0.7
+      ],
+      "collidable": true
+    },
+    {
+      "id": "P2",
+      "type": "box",
+      "asset": "spawn_barrier",
+      "position": [
+        5.9,
+        0,
+        -4.1
+      ],
+      "size": [
+        1.8,
+        1.45,
+        0.7
+      ],
+      "collidable": true
+    },
+    {
+      "id": "P3",
+      "type": "box",
+      "asset": "spawn_barrier",
+      "position": [
+        -5.9,
+        0,
+        4.1
+      ],
+      "size": [
+        1.8,
+        1.45,
+        0.7
+      ],
+      "collidable": true
+    },
+    {
+      "id": "P4",
+      "type": "box",
+      "asset": "spawn_barrier",
+      "position": [
+        5.9,
+        0,
+        4.1
+      ],
+      "size": [
+        1.8,
+        1.45,
+        0.7
+      ],
+      "collidable": true
+    }
+  ],
+  "elevatedPlatforms": [
+    {
+      "id": "L_W",
+      "position": [
+        -8.1,
+        1.8,
+        0
+      ],
+      "size": [
+        2.2,
+        0.2,
+        5.6
+      ],
+      "topY": 1.8,
+      "asset": "wood_walkway",
+      "collidable": true,
+      "passUnder": true
+    },
+    {
+      "id": "L_E",
+      "position": [
+        8.1,
+        1.8,
+        0
+      ],
+      "size": [
+        2.2,
+        0.2,
+        5.6
+      ],
+      "topY": 1.8,
+      "asset": "wood_walkway",
+      "collidable": true,
+      "passUnder": true
+    }
+  ],
+  "ramps": [
+    {
+      "id": "R_WN",
+      "centerX": -8.1,
+      "widthX": 2.2,
+      "startZ": -6.0,
+      "endZ": -2.8,
+      "startY": 0,
+      "endY": 1.8,
+      "collidable": true,
+      "asset": "wood_ramp"
+    },
+    {
+      "id": "R_WS",
+      "centerX": -8.1,
+      "widthX": 2.2,
+      "startZ": 2.8,
+      "endZ": 6.0,
+      "startY": 1.8,
+      "endY": 0,
+      "collidable": true,
+      "asset": "wood_ramp"
+    },
+    {
+      "id": "R_EN",
+      "centerX": 8.1,
+      "widthX": 2.2,
+      "startZ": -6.0,
+      "endZ": -2.8,
+      "startY": 0,
+      "endY": 1.8,
+      "collidable": true,
+      "asset": "wood_ramp"
+    },
+    {
+      "id": "R_ES",
+      "centerX": 8.1,
+      "widthX": 2.2,
+      "startZ": 2.8,
+      "endZ": 6.0,
+      "startY": 1.8,
+      "endY": 0,
+      "collidable": true,
+      "asset": "wood_ramp"
+    }
+  ],
+  "supports": [
+    {
+      "id": "T1",
+      "type": "box",
+      "position": [
+        -8.85,
+        0,
+        -2.55
+      ],
+      "size": [
+        0.22,
+        1.65,
+        0.22
+      ],
+      "asset": "wood_support",
+      "collidable": true
+    },
+    {
+      "id": "T2",
+      "type": "box",
+      "position": [
+        -8.85,
+        0,
+        2.55
+      ],
+      "size": [
+        0.22,
+        1.65,
+        0.22
+      ],
+      "asset": "wood_support",
+      "collidable": true
+    },
+    {
+      "id": "T3",
+      "type": "box",
+      "position": [
+        -7.35,
+        0,
+        -2.55
+      ],
+      "size": [
+        0.22,
+        1.65,
+        0.22
+      ],
+      "asset": "wood_support",
+      "collidable": true
+    },
+    {
+      "id": "T4",
+      "type": "box",
+      "position": [
+        -7.35,
+        0,
+        2.55
+      ],
+      "size": [
+        0.22,
+        1.65,
+        0.22
+      ],
+      "asset": "wood_support",
+      "collidable": true
+    },
+    {
+      "id": "T5",
+      "type": "box",
+      "position": [
+        7.35,
+        0,
+        -2.55
+      ],
+      "size": [
+        0.22,
+        1.65,
+        0.22
+      ],
+      "asset": "wood_support",
+      "collidable": true
+    },
+    {
+      "id": "T6",
+      "type": "box",
+      "position": [
+        7.35,
+        0,
+        2.55
+      ],
+      "size": [
+        0.22,
+        1.65,
+        0.22
+      ],
+      "asset": "wood_support",
+      "collidable": true
+    },
+    {
+      "id": "T7",
+      "type": "box",
+      "position": [
+        8.85,
+        0,
+        -2.55
+      ],
+      "size": [
+        0.22,
+        1.65,
+        0.22
+      ],
+      "asset": "wood_support",
+      "collidable": true
+    },
+    {
+      "id": "T8",
+      "type": "box",
+      "position": [
+        8.85,
+        0,
+        2.55
+      ],
+      "size": [
+        0.22,
+        1.65,
+        0.22
+      ],
+      "asset": "wood_support",
+      "collidable": true
+    }
+  ],
+  "rails": {
+    "heightAboveDeck": 0.55,
+    "thickness": 0.12,
+    "runsAlong": "two longitudinal edges of each elevated platform",
+    "collidable": true,
+    "mustLeaveRampEntrancesOpen": true,
+    "note": "rails are above the deck and must not seal the ramp junctions"
+  },
+  "gameplay": {
+    "routes": [
+      "through central feeder ring",
+      "around north/south barricades",
+      "over west/east walkways via either ramp",
+      "under the walkways between the posts"
+    ],
+    "centralFeederIsSolid": true,
+    "allowJumpFromWalkway": true,
+    "noAdditionalSolidPropsWithoutNavigationCheck": true
+  },
+  "visualDirection": {
+    "style": "stylized readable low-poly",
+    "colors": {
+      "wood": "#936341",
+      "hay": "#E7B75B",
+      "ground": "#DED0AB",
+      "metal": "#8797A1",
+      "walkway": "#71AAC5"
+    },
+    "decorativeOnly": [
+      "chickens",
+      "egg shells",
+      "feathers",
+      "signage",
+      "flowers"
+    ],
+    "noRoofOverPlayableArea": true
+  },
+  "acceptance": [
+    "All four spawn positions are clear of geometry and valid for a capsule radius 0.34 m.",
+    "All six pairs of initial spawns have no direct eye-level line of sight.",
+    "Every spawn can walk to the central feeder and every ramp base.",
+    "Both elevated decks are reachable from their north and south ramps.",
+    "The space under decks remains passable with at least 1.60 m clearance.",
+    "Use exact geometry; visual dressing must not block traversal or spawns."
+  ]
+}
