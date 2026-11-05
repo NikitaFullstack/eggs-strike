@@ -7,6 +7,7 @@ globalThis.EggCombat = {
     awp:    {kick:.32, recovery:6,  lift:1.4, camera:.022, flash:1.5, sound:'shot-b', volume:.9,  rate:.55},
     usp:    {kick:.05, recovery:13, lift:.9,  camera:.004, flash:.45, sound:'shot-a', volume:.27, rate:1.3},
     deagle: {kick:.21, recovery:7.5,lift:1.7, camera:.016, flash:1.1, sound:'shot-b', volume:.7,  rate:.95},
+    knife:  {kick:.3,  recovery:9,  lift:-.6, camera:.003, flash:0,   sound:'knife-swing', volume:.45, rate:1},
   },
   create(THREE, scene) {
     const particles=[], cases=[], marks=[], tracers=[], impacts=[];

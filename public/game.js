@@ -179,6 +179,8 @@ function onMessage(msg) {
       S.lobbyPlayers = msg.players;
       S.mapId = msg.mapId || S.mapId;
       S.roomState = msg.state;
+      S.practice = !!msg.practice;
+      if (typeof updatePracticeBadge === 'function') updatePracticeBadge();
       for (const p of msg.players) rememberPlayer(p);
       if (S.screen === 'lobby') renderLobbyPlayers();
       if (S.screen === 'results') updateResultActions();
@@ -226,6 +228,14 @@ function showMenu(text) {
   if (document.pointerLockElement) document.exitPointerLock();
 }
 
+function updatePracticeBadge() {
+  const bots = S.lobbyPlayers.filter(p => p.bot).length;
+  const badge = $('practiceBadge');
+  badge.classList.toggle('hidden', !S.practice);
+  const word = bots % 10 === 1 && bots % 100 !== 11 ? 'бот' : [2, 3, 4].includes(bots % 10) && ![12, 13, 14].includes(bots % 100) ? 'бота' : 'ботов';
+  badge.textContent = `Тренировка · ${bots} ${word}`;
+}
+
 function renderLobbyPlayers() {
   const list = $('playerList');
   list.innerHTML = '';
@@ -249,6 +259,12 @@ function renderLobbyPlayers() {
       you.className = 'you-tag';
       you.textContent = 'ты';
       li.append(you);
+    }
+    if (p.bot) {
+      const bot = document.createElement('span');
+      bot.className = 'host-tag';
+      bot.textContent = 'бот';
+      li.append(bot);
     }
     if (p.i === S.hostId) {
       const host = document.createElement('span');
@@ -339,7 +355,7 @@ function setMenuBusy(btn, text) {
 function clearMenuBusy() {
   clearTimeout(busyTimer);
   $('btnCustomize').disabled = false;
-  for (const id of ['btnCreate', 'btnJoin']) {
+  for (const id of ['btnCreate', 'btnJoin', 'btnPractice']) {
     const b = $(id);
     if (!b) continue;
     b.disabled = false;
@@ -366,6 +382,20 @@ async function createRoom() {
   try {
     await connect();
     send({ t: 'create', name, mapId: S.mapId, appearance: S.appearance });
+  } catch (e) {
+    clearMenuBusy();
+    $('menuMsg').textContent = e.message;
+  }
+}
+
+async function startPractice() {
+  const name = readName();
+  $('menuMsg').textContent = '';
+  setMenuBusy($('btnPractice'), 'Запускаем тренировку…');
+  startBusyTimeout();
+  try {
+    await connect();
+    send({ t: 'create', name, mapId: S.mapId, appearance: S.appearance, practice: true, bots: Number($('botCount').value) || 2 });
   } catch (e) {
     clearMenuBusy();
     $('menuMsg').textContent = e.message;
@@ -673,7 +703,7 @@ function buildArena(arena) {
     : globalThis.EggCoopWorld.build(THREE, arena, arenaGroup, worldMeshes);
 }
 
-const DEFAULT_WEAPON_IDS = ['ak', 'm4', 'shot', 'awp', 'usp', 'deagle'];
+const DEFAULT_WEAPON_IDS = ['ak', 'm4', 'shot', 'awp', 'usp', 'deagle', 'knife'];
 const gunModels = {};
 let muzzleZ = -0.6;
 
@@ -913,6 +943,16 @@ function makeGunModel(id) {
     gunBox(g, 0.02, 0.03, 0.03, 0, 0.09, 0.02, dark);
     gunBox(g, 0.115, 0.025, 0.1, 0, 0.06, -0.02, dark);
     mz = -0.48;
+  } else if (id === 'knife') {
+    // Рукоять, гарда и клинок со скосом к острию.
+    gunBox(g, 0.05, 0.06, 0.2, 0, -0.02, 0.02, dark);
+    gunBox(g, 0.055, 0.012, 0.16, 0, 0.012, 0.02, accent);
+    gunBox(g, 0.12, 0.03, 0.025, 0, 0, -0.09, steel);
+    gunBox(g, 0.012, 0.075, 0.3, 0, 0.012, -0.25, steel);
+    gunBox(g, 0.008, 0.04, 0.09, 0, 0.03, -0.43, steel, 0.42);
+    gunBox(g, 0.014, 0.012, 0.28, 0, 0.05, -0.24, mid);
+    g.rotation.z = -0.25;
+    mz = -0.45;
   } else {
     gunBox(g, 0.12, 0.13, 0.4, 0, 0, -0.1, dark);
     mz = -0.6;
@@ -1400,11 +1440,6 @@ function updateMe(dt, visualDt = dt) {
 
   }
 
-  if (S.firing && S.locked && me.alive) {
-    const w = currentWeapon();
-    if (w && w.auto) tryFire();
-  }
-
   if (me.reloading && performance.now() >= me.reloadEnd) {
     const w = S.weapons && S.weapons[me.reloadWeapon];
     if (w) me.ammo[me.reloadWeapon] = w.mag;
@@ -1446,7 +1481,7 @@ function updateRemotes(dt) {
   const k = Math.min(1, dt * 15);
   if (S.snapshotAt) {
     // Render a known point between authoritative snapshots; shots refer to this same time.
-    S.viewTime = Math.max(S.viewTime, Math.min(S.snapshotAt, S.snapshotAt + performance.now() - S.snapshotReceived - 75));
+    S.viewTime = Math.max(S.viewTime, Math.min(S.snapshotAt, S.snapshotAt + performance.now() - S.snapshotReceived - 50));
   }
   for (const v of S.players.values()) {
     const t = v.target;
@@ -1552,7 +1587,7 @@ function renderWeaponBar() {
     n.textContent = w.short;
     const a = document.createElement('span');
     a.className = 'wa';
-    a.textContent = String(w.mag);
+    a.textContent = w.melee ? '∞' : String(w.mag);
     el.append(k, n, a);
     bar.append(el);
   });
@@ -1564,13 +1599,14 @@ function updateWeaponBar() {
   if (!bar || !S.weapons) return;
   for (const el of bar.children) {
     const id = el.dataset.id;
+    const melee = !!S.weapons[id]?.melee;
     const ammo = S.me.ammo[id] ?? 0;
     const active = id === S.me.weapon;
     if (el.classList.contains('active') !== active) el.classList.toggle('active', active);
-    const empty = ammo === 0;
+    const empty = !melee && ammo === 0;
     if (el.classList.contains('empty') !== empty) el.classList.toggle('empty', empty);
     const a = el.querySelector('.wa');
-    const text = String(ammo);
+    const text = melee ? '∞' : String(ammo);
     if (a && a.textContent !== text) a.textContent = text;
   }
 }
@@ -1668,6 +1704,8 @@ function tryFire() {
   const cooldown = Math.max(60, (60000 / w.rpm) * 0.9);
   if (now - me.lastShot < cooldown) return;
 
+  if (w.melee) return slash(w, now);
+
   if ((me.ammo[me.weapon] || 0) <= 0) {
     Sound.play('click', { volume: 0.35, rate: 0.9 });
     startReload();
@@ -1696,6 +1734,19 @@ function tryFire() {
   if (me.ammo[me.weapon] <= 0) startReload();
   updateWeaponBar();
   updateHud();
+}
+
+function slash(w, now) {
+  const me = S.me;
+  me.lastShot = now;
+  recoil = Math.min(.42, recoil + EggCombat.profiles.knife.kick);
+  playWeaponSound(w);
+  camera.rotation.set(me.pitch, me.yaw, 0);
+  camera.updateMatrixWorld(true);
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  sendInput();
+  send({ t: 'shoot', dx: dir.x, dy: dir.y, dz: dir.z, w: w.id, viewTime: S.viewTime || undefined });
 }
 
 function flashMuzzle() {
@@ -1739,7 +1790,7 @@ function laterSound(fn, ms) {
 function startReload() {
   const me = S.me;
   const w = currentWeapon();
-  if (!w || me.reloading || !me.alive) return;
+  if (!w || w.melee || me.reloading || !me.alive) return;
   if ((me.ammo[me.weapon] || 0) >= w.mag) return;
 
   me.reloading = true;
@@ -2057,11 +2108,11 @@ function updateHud() {
 
   const w = currentWeapon();
   const ammo = w ? (me.ammo[me.weapon] ?? 0) : 0;
-  const ammoText = me.reloading ? '—' : String(ammo);
+  const ammoText = w?.melee ? '∞' : me.reloading ? '—' : String(ammo);
   if (lastHud.ammo !== ammoText) {
     lastHud.ammo = ammoText;
     $('ammo').textContent = ammoText;
-    $('ammo').classList.toggle('empty', ammo === 0 && !me.reloading);
+    $('ammo').classList.toggle('empty', ammo === 0 && !me.reloading && !w?.melee);
   }
   updateWeaponBar();
 
@@ -2326,6 +2377,15 @@ const Sound = {
     make('impact-hay',.14,(t,n)=>n*.6*Math.exp(-t*30));
     make('impact-dirt',.18,(t,n)=>n*.9*Math.exp(-t*24));
     make('impact-metal',.32,(t,n)=>(ring(t,1350)*.35+ring(t,2180)*.23+n*.15)*Math.exp(-t*14));
+    // Попадание по яйцу: сухой треск скорлупы + мягкий шлепок белка.
+    make('egg-hit',.24,(t,n)=>{
+      const crack=n*(t<.035?1:.25)*Math.exp(-t*60)*(1+Math.sin(t*2600)*.5);
+      const tick=(Math.random()<.04&&t<.06?(Math.random()*2-1)*.8:0)*Math.exp(-t*40);
+      const splat=ring(t,190-t*300)*.42*Math.exp(-t*22)*(1-Math.exp(-t*400));
+      return crack*.9+tick+splat;
+    });
+    make('knife-swing',.2,(t,n)=>n*.75*Math.sin(Math.min(1,t/.2)*Math.PI)**2*(.6+.4*Math.sin(t*90)));
+    make('knife-slash',.18,(t,n)=>(n*.6+ring(t,620)*.15)*Math.exp(-t*26)*(1-Math.exp(-t*300)));
     make('grenade-explosion',.8,(t,n)=>(n*.9+ring(t,60)*.5)*Math.exp(-t*8)*(1-Math.exp(-t*180)));
     make('farm-wind',3,(t,n)=>n*.18*(.65+.35*Math.sin(t*Math.PI*2/3))*Math.sin(t*Math.PI/3)**2);
     make('farm-hen',.7,(t,n)=>{
@@ -2406,15 +2466,36 @@ function onShot(msg) {
   if (!origin) return;
   const right = new THREE.Vector3(1,0,0).applyAxisAngle(new THREE.Vector3(0,1,0), v?.target?.yaw || 0);
   const start = own ? muzzleWorld() : v?.gun ? v.gun.localToWorld(new THREE.Vector3(0,.02,-.61)) : new THREE.Vector3(origin.x, origin.y-.15, origin.z);
-  if (!own) {
+  if (!own && !msg.melee) {
     combat.muzzle(start, right, msg.w, false);
+    const spatial = soundPosition(origin);
+    if (spatial.volume > 0) playWeaponSound({id:msg.w}, spatial);
+  } else if (!own) {
     const spatial = soundPosition(origin);
     if (spatial.volume > 0) playWeaponSound({id:msg.w}, spatial);
   }
   let audible = false;
+  if (msg.melee) {
+    for (const ray of msg.rays) {
+      if (ray.material) combat.impact(ray);
+      const spatial = soundPosition(ray.point);
+      if (ray.material === 'egg') {
+        Sound.play('knife-slash', {...spatial, volume: spatial.volume * .7});
+        Sound.play('egg-hit', {...spatial, volume: spatial.volume * .9, rate: .85});
+      } else if (ray.material) Sound.play('impact-'+ray.material, {...spatial, volume: spatial.volume * .3});
+    }
+    return;
+  }
+  let eggHit = false;
   for (const ray of msg.rays) {
     combat.tracer(start, ray.point);
     combat.impact(ray);
+    if (!eggHit && ray.material === 'egg') {
+      // Отдельный звук попадания по яйцу слышат все игроки рядом с целью.
+      const spatial = soundPosition(ray.point);
+      Sound.play('egg-hit', {...spatial, volume: spatial.volume * (own ? .55 : .8), rate: .92 + Math.random() * .16});
+      eggHit = true;
+    }
     if (!audible && ray.material && ray.material !== 'egg') {
       const spatial = soundPosition(ray.point);
       Sound.play('impact-'+ray.material, {...spatial,volume:spatial.volume*.28});
@@ -2457,7 +2538,7 @@ function playFootstep(volume, pan = 0, rate = 1, lowpass = 0, material = 'dirt')
   Sound.play('step-'+material, {volume,pan,rate:rate*(.94+Math.random()*.12),lowpass});
 }
 
-function playHit() { tone(1080, 0.05, 'sine', 0.045, 820); }
+function playHit() { tone(1180, 0.04, 'sine', 0.035, 900); }
 function playKill() { tone(1320, 0.11, 'sine', 0.045, 720); }
 function playHurt() { tone(150, 0.18, 'triangle', 0.06, 70); }
 function playDeath() { tone(180, 0.5, 'sawtooth', 0.045, 40); }
@@ -2504,7 +2585,7 @@ document.addEventListener('keydown', (e) => {
   if (S.screen === 'hud' && S.locked) {
     if (e.code === 'KeyG') { e.preventDefault(); if (!e.repeat) throwGrenade(); }
     if (e.code === 'KeyR') startReload();
-    const m = /^(?:Digit|Numpad)([1-6])$/.exec(e.code);
+    const m = /^(?:Digit|Numpad)([1-7])$/.exec(e.code);
     if (m) {
       const id = S.slots[Number(m[1]) - 1];
       if (id) switchWeapon(id);
@@ -2536,7 +2617,6 @@ canvas.addEventListener('mousedown', (e) => {
     return;
   }
 
-  S.firing = true;
   tryFire();
 });
 
@@ -2580,7 +2660,7 @@ function sendInput() {
     });
   }
 }
-setInterval(sendInput, 50);
+setInterval(sendInput, 33);
 
 /* ============================ кнопки ============================ */
 
@@ -2700,6 +2780,7 @@ $('btnPlayBack').addEventListener('click', () => {
 });
 
 $('btnCreate').addEventListener('click', createRoom);
+$('btnPractice').addEventListener('click', startPractice);
 $('btnJoin').addEventListener('click', joinRoom);
 
 $('code').addEventListener('keydown', (e) => {

@@ -32,7 +32,14 @@ const WEAPONS = {
   awp:    { id: 'awp',    name: 'Снайперка',short: 'AWP',  dmg: 100,rpm: 28,  mag: 5,  reload: 3.4, spread: 0.001, pellets: 1, auto: false, recoil: 0.3, zoom: true },
   usp:    { id: 'usp',    name: 'USP-S',    short: 'USP',  dmg: 19, rpm: 233, mag: 12, reload: 1.9, spread: 0.006, pellets: 1, auto: false, recoil: 0.08 },
   deagle: { id: 'deagle', name: 'Дигл',     short: 'ДИГЛ', dmg: 52, rpm: 160, mag: 7,  reload: 2.3, spread: 0.01,  pellets: 1, auto: false, recoil: 0.2 },
+  // Ближний бой: 55 урона за порез, бьёт в конус перед игроком на 2,2 м.
+  knife:  { id: 'knife',  name: 'Нож',      short: 'НОЖ',  dmg: 55, rpm: 150, mag: 0,  reload: 0,   spread: 0,     pellets: 1, auto: false, recoil: 0.05, melee: true, range: 2.2 },
 };
+
+const KNIFE_CONE = Math.cos(40 * Math.PI / 180);
+const BOT_NAMES = ['Бот Желток', 'Бот Скорлупа', 'Бот Омлет', 'Бот Глазунья', 'Бот Пашот'];
+const BOT_WEAPONS = ['ak', 'm4', 'usp', 'deagle', 'shot'];
+const BOT_SOCKET = { readyState: 3, send() {}, close() {} };
 
 const COLORS = EggAppearance.COLORS.map(option => option.value);
 
@@ -180,8 +187,12 @@ function broadcast(room, obj, exceptId) {
 }
 
 function publicPlayer(p) {
-  return { i: p.id, n: p.name, c: p.appearance.color, appearance: p.appearance, k: p.kills, d: p.deaths, hp: p.hp, a: p.alive && !p.inLobby ? 1 : 0 };
+  const pub = { i: p.id, n: p.name, c: p.appearance.color, appearance: p.appearance, k: p.kills, d: p.deaths, hp: p.hp, a: p.alive && !p.inLobby ? 1 : 0 };
+  if (p.bot) pub.bot = 1;
+  return pub;
 }
+
+const humans = room => [...room.players.values()].filter(p => !p.bot);
 
 function lobbyState(room) {
   return {
@@ -189,6 +200,7 @@ function lobbyState(room) {
     hostId: room.hostId,
     state: room.state,
     mapId: room.mapId,
+    practice: room.practice ? 1 : 0,
     maxPlayers: mapCapacity(MAPS[room.mapId]),
     players: [...room.players.values()].map(publicPlayer),
   };
@@ -227,6 +239,11 @@ function pickSpawn(room, player) {
     return {s,distance,visible,safe:!visible&&distance>=map.spawnRules.minimumEnemyDistanceOnRespawn};
   }).filter(o=>o.distance>map.playerCollision.radius*2&&!ArenaGeometry.blocks(map,o.s.x,o.s.z,o.s.y));
   options.sort((a,b)=>Number(b.safe)-Number(a.safe)||Number(a.visible)-Number(b.visible)||b.distance-a.distance);
+  // В тренировке боты появляются рядом с игроком (но не вплотную), чтобы не искать их по всей карте.
+  if(room.practice&&player.bot&&enemies.some(p=>!p.bot)){
+    const near=options.filter(o=>o.distance>=6).sort((a,b)=>a.distance-b.distance);
+    if(near.length)return spawnPose(near[0].s);
+  }
   if(!options.length)throw Error('No free JSON spawn');
   return spawnPose(options[0].s);
 }
@@ -278,7 +295,7 @@ function startMatch(room) {
 
   broadcastLobby(room);
 
-  room.timer = setInterval(() => tickRoom(room), 50);
+  room.timer = setInterval(() => tickRoom(room), 33);
 }
 
 function endMatch(room) {
@@ -308,6 +325,8 @@ function tickRoomInner(room) {
   tickGrenades(room, Math.min(now, deadline));
   if (room.timeLeft <= 0) { endMatch(room); return; }
 
+  if (room.practice) tickBots(room, now);
+
   // респавны
   for (const p of room.players.values()) {
     const map = MAPS[room.mapId];
@@ -315,7 +334,7 @@ function tickRoomInner(room) {
     if (!p.alive && !p.inLobby && now >= p.respawnAt) respawnPlayer(room, p);
   }
 
-  if (now - room.lastSnapshot >= 50) {
+  if (now - room.lastSnapshot >= 33) {
     room.lastSnapshot = now;
     const snapshot = {
       t: 's',
@@ -325,7 +344,7 @@ function tickRoomInner(room) {
       p: [...room.players.values()].map((p) => ({
         i: p.id, x: r2(p.x), y: r2(p.y), z: r2(p.z), yaw: r2(p.yaw), p: r2(p.pitch),
         hp: Math.round(p.hp), a: p.alive && !p.inLobby ? 1 : 0, im:p.immuneUntil>now?1:0, k: p.kills, d: p.deaths,
-        grenades: p.grenades,
+        grenades: p.grenades, ...(p.bot ? { bot: 1 } : {}),
       })),
     };
     room.snapshots.push(snapshot);
@@ -528,6 +547,8 @@ function handleShoot(room, p, msg) {
   d = { x: d.x / len, y: d.y / len, z: d.z / len };
   p.lastShot = now;
 
+  if (w.melee) return handleMelee(room, p, w, o, d, msg, now);
+
   const rays = [];
   const map = MAPS[room.mapId];
   const damage = new Map();
@@ -602,6 +623,160 @@ function handleShoot(room, p, msg) {
   }
 }
 
+/* Нож: попадает в ближайшее яйцо в горизонтальном конусе перед игроком. Наклон
+ * камеры не важен — порез по низкому или высокому сопернику засчитывается. */
+function handleMelee(room, p, w, o, d, msg, now) {
+  const map = MAPS[room.mapId];
+  const shape = map.playerCollision;
+  const flat = Math.hypot(d.x, d.z) || 1;
+  const fx = d.x / flat, fz = d.z / flat;
+  let best = null, bestPose = null, bestDistance = Infinity;
+  for (const other of room.players.values()) {
+    if (other.id === p.id || !other.alive || other.inLobby) continue;
+    const pose = viewedPlayer(room, other, msg.viewTime, now);
+    if (!pose) continue;
+    const dx = pose.x - o.x, dz = pose.z - o.z;
+    const horizontal = Math.hypot(dx, dz);
+    const reach = horizontal - shape.radius;
+    if (reach > w.range) continue;
+    const top = pose.y + shape.height, bottom = pose.y;
+    if (o.y < bottom - .6 || o.y > top + .9) continue;
+    if (horizontal > shape.radius && (dx * fx + dz * fz) / horizontal < KNIFE_CONE) continue;
+    const chest = { x: pose.x, y: Math.max(bottom + .2, Math.min(top - .2, o.y)), z: pose.z };
+    if (!ArenaGeometry.visible(map, o, chest)) continue;
+    if (horizontal < bestDistance) { bestDistance = horizontal; best = other; bestPose = chest; }
+  }
+
+  let ray;
+  if (best) {
+    const len = Math.hypot(o.x - bestPose.x, o.z - bestPose.z) || 1;
+    const normal = { x: (o.x - bestPose.x) / len, y: 0, z: (o.z - bestPose.z) / len };
+    const immune = now < best.immuneUntil;
+    ray = { point: { x: bestPose.x + normal.x * shape.radius, y: bestPose.y, z: bestPose.z + normal.z * shape.radius },
+      normal, material: immune ? null : 'egg', target: best.id };
+  } else {
+    // Взмах в воздух: если рядом стена — короткий звук удара по материалу.
+    const hit = map.mesh ? ArenaGeometry.rayMesh(map, o, d) : null;
+    const t = hit && hit.t <= w.range ? hit.t : w.range;
+    ray = { point: { x: o.x + d.x * t, y: o.y + d.y * t, z: o.z + d.z * t },
+      normal: hit && hit.t <= w.range ? hit.normal : { x: -d.x, y: -d.y, z: -d.z },
+      material: hit && hit.t <= w.range ? hit.material : null, target: null };
+  }
+
+  broadcast(room, { t: 'shot', i: p.id, w: w.id, origin: o, melee: 1, rays: [ray] });
+  if (best && now >= best.immuneUntil) damagePlayer(room, p, best, w.dmg, w.id, now);
+}
+
+/* ---------- боты (тренировка) ---------- */
+
+function addBot(room, index) {
+  const id = nextId++;
+  const appearance = EggAppearance.normalize({ color: freeColor(room) }, { color: freeColor(room) });
+  const bot = {
+    id, name: BOT_NAMES[index % BOT_NAMES.length], color: appearance.color, appearance, ws: BOT_SOCKET, bot: true,
+    x: 0, y: 0, z: 0, yaw: 0, pitch: 0,
+    hp: 100, alive: true, inLobby: false, kills: 0, deaths: 0,
+    respawnAt: 0, lastShot: 0, grenades: 0, lastGrenade: 0,
+    ai: { waypoint: null, target: null, seenAt: 0, nextShot: 0, ammo: 0, weapon: 'ak', strafe: Math.random() < .5 ? 1 : -1, strafeUntil: 0, stuck: 0, lifeId: 0 },
+  };
+  room.players.set(id, bot);
+  return bot;
+}
+
+function botLoadout(bot) {
+  bot.ai.weapon = BOT_WEAPONS[(Math.random() * BOT_WEAPONS.length) | 0];
+  bot.ai.ammo = WEAPONS[bot.ai.weapon].mag;
+  bot.ai.lifeId = bot.spawnedAt;
+  bot.ai.target = null;
+  bot.ai.waypoint = null;
+}
+
+function botStep(map, bot, dx, dz) {
+  const shape = map.playerCollision;
+  const tryMove = (x, z) => {
+    x = Math.max(map.bounds.minX + shape.radius, Math.min(map.bounds.maxX - shape.radius, x));
+    z = Math.max(map.bounds.minZ + shape.radius, Math.min(map.bounds.maxZ - shape.radius, z));
+    const ground = ArenaGeometry.groundHeight(map, x, z, bot.y + shape.maxStepHeight);
+    if (!Number.isFinite(ground)) return false;
+    // Не прыгаем в пропасть глубже 1,6 м — бот обходит обрывы.
+    if (bot.y - ground > 1.6) return false;
+    if (ArenaGeometry.blocks(map, x, z, Math.max(ground, bot.y))) return false;
+    bot.x = x; bot.z = z; bot.y = Math.max(map.bounds.floorY, ground);
+    return true;
+  };
+  return tryMove(bot.x + dx, bot.z + dz) || tryMove(bot.x + dx, bot.z) || tryMove(bot.x, bot.z + dz);
+}
+
+function tickBots(room, now) {
+  const map = MAPS[room.mapId];
+  const dt = Math.min(.1, (now - (room.lastBotTick || now)) / 1000) || .05;
+  room.lastBotTick = now;
+  const eye = EYE_HEIGHT;
+  for (const bot of room.players.values()) {
+    if (!bot.bot || !bot.alive || bot.inLobby) continue;
+    const ai = bot.ai;
+    if (ai.lifeId !== bot.spawnedAt) botLoadout(bot);
+
+    // Ближайший видимый соперник.
+    let target = null, targetDistance = Infinity;
+    const from = { x: bot.x, y: bot.y + eye, z: bot.z };
+    for (const other of room.players.values()) {
+      if (other === bot || !other.alive || other.inLobby) continue;
+      const distance = Math.hypot(other.x - bot.x, other.z - bot.z, other.y - bot.y);
+      if (distance > 45 || distance >= targetDistance) continue;
+      if (!ArenaGeometry.visible(map, from, { x: other.x, y: other.y + eye * .8, z: other.z })) continue;
+      target = other; targetDistance = distance;
+    }
+    if (target !== ai.target) { ai.target = target; ai.seenAt = now; }
+
+    // Движение: к цели/вокруг неё либо патруль по точкам спавна.
+    const speed = 3.2 * dt;
+    let mx = 0, mz = 0;
+    if (target) {
+      const dx = target.x - bot.x, dz = target.z - bot.z, len = Math.hypot(dx, dz) || 1;
+      if (now > ai.strafeUntil) { ai.strafe = Math.random() < .5 ? 1 : -1; ai.strafeUntil = now + 600 + Math.random() * 900; }
+      const want = ai.weapon === 'shot' ? 4 : 9;
+      const forward = targetDistance > want + 2 ? 1 : targetDistance < want - 3 ? -.6 : 0;
+      mx = (dx / len) * forward + (-dz / len) * ai.strafe * .8;
+      mz = (dz / len) * forward + (dx / len) * ai.strafe * .8;
+    } else {
+      if (!ai.waypoint || Math.hypot(ai.waypoint.x - bot.x, ai.waypoint.z - bot.z) < 1.2 || ai.stuck > 1.2) {
+        const humansFirst = [...room.players.values()].filter(p => p !== bot && p.alive && !p.inLobby);
+        const chase = humansFirst.length && Math.random() < .55 ? humansFirst[(Math.random() * humansFirst.length) | 0] : null;
+        const spot = chase || map.spawns[(Math.random() * map.spawns.length) | 0];
+        ai.waypoint = { x: spot.x, z: spot.z };
+        ai.stuck = 0;
+      }
+      const dx = ai.waypoint.x - bot.x, dz = ai.waypoint.z - bot.z, len = Math.hypot(dx, dz) || 1;
+      mx = dx / len; mz = dz / len;
+    }
+    const mlen = Math.hypot(mx, mz);
+    if (mlen > .01) {
+      const moved = botStep(map, bot, mx / mlen * speed, mz / mlen * speed);
+      if (!moved) { ai.stuck += dt; ai.strafe *= -1; } else ai.stuck = Math.max(0, ai.stuck - dt);
+      if (!target) bot.yaw = Math.atan2(-mx, -mz);
+    }
+
+    if (!target) continue;
+    // Прицел: смотрим на соперника, стреляем с задержкой реакции и разбросом.
+    const aim = { x: target.x - bot.x, y: target.y + eye * .75 - (bot.y + eye), z: target.z - bot.z };
+    bot.yaw = Math.atan2(-aim.x, -aim.z);
+    bot.pitch = Math.atan2(aim.y, Math.hypot(aim.x, aim.z));
+    if (now - ai.seenAt < 900 || now < ai.nextShot || now < target.immuneUntil) continue;
+
+    const weaponId = targetDistance < 2.4 ? 'knife' : ai.weapon;
+    const w = WEAPONS[weaponId];
+    const length = Math.hypot(aim.x, aim.y, aim.z) || 1;
+    const error = .07 + Math.min(.07, targetDistance * .003);
+    const dir = { x: aim.x / length + (Math.random() - .5) * error * 2, y: aim.y / length + (Math.random() - .5) * error * 2, z: aim.z / length + (Math.random() - .5) * error * 2 };
+    bot.lastShot = 0;
+    handleShoot(room, bot, { w: weaponId, dx: dir.x, dy: dir.y, dz: dir.z });
+    const pause = 60000 / w.rpm * (w.auto ? 2.2 : 1.6) + 150 + Math.random() * 350;
+    ai.nextShot = now + pause;
+    if (!w.melee && --ai.ammo <= 0) { ai.ammo = w.mag; ai.nextShot = now + w.reload * 1000; }
+  }
+}
+
 /* ---------- websocket ---------- */
 
 const wss = new WebSocketServer({ server, path: '/ws' });
@@ -628,13 +803,13 @@ wss.on('connection', (ws) => {
     room.players.delete(p.id);
     room.grenades = room.grenades.filter(grenade => grenade.owner !== p.id);
 
-    if (room.players.size === 0) {
+    if (humans(room).length === 0) {
       if (room.timer) clearInterval(room.timer);
       rooms.delete(room.code);
       return;
     }
     if (room.hostId === p.id) {
-      room.hostId = [...room.players.keys()][0];
+      room.hostId = humans(room)[0].id;
     }
     if (room.state === 'playing' && room.players.size < 1) {
       endMatch(room);
@@ -657,6 +832,7 @@ function onMessage(ws, msg) {
     } else {
       room = rooms.get(code);
       if (!room) return send(ws, { t: 'error', msg: 'Комната не найдена' });
+      if (room.practice) return send(ws, { t: 'error', msg: 'Это тренировка с ботами — в неё нельзя войти' });
       if (room.players.size >= mapCapacity(MAPS[room.mapId])) return send(ws, { t: 'error', msg: 'Комната заполнена' });
     }
 
@@ -709,6 +885,14 @@ function onMessage(ws, msg) {
     }
 
     broadcastLobby(room);
+
+    // Тренировка: добавляем ботов и сразу начинаем бой.
+    if (msg.t === 'create' && msg.practice) {
+      room.practice = true;
+      const count = Math.max(1, Math.min(mapCapacity(map) - 1, Number(msg.bots) || 2));
+      for (let i = 0; i < count; i++) addBot(room, i);
+      startMatch(room);
+    }
     return;
   }
 
