@@ -1311,6 +1311,10 @@ function updateMe(dt, visualDt = dt) {
     moving = !!(f || r);
 
     if (moving) {
+      // Recover from a shallow overlap before attempting the next move. This
+      // can occur after falling onto a corner or receiving a corrected spawn.
+      const recovered = ArenaGeometry.recoverPosition(S.arena, me);
+      if (recovered) { me.x = recovered.x; me.y = recovered.y; me.z = recovered.z; }
       const len = Math.hypot(f, r);
       const fx = -Math.sin(me.yaw), fz = -Math.cos(me.yaw);
       const rx = Math.cos(me.yaw), rz = -Math.sin(me.yaw);
@@ -1439,6 +1443,8 @@ function updateMe(dt, visualDt = dt) {
     if (muzzle) muzzle.visible = performance.now() < muzzleUntil && me.alive;
 
   }
+
+  if (S.firing && S.locked && me.alive && currentWeapon()?.auto) tryFire();
 
   if (me.reloading && performance.now() >= me.reloadEnd) {
     const w = S.weapons && S.weapons[me.reloadWeapon];
@@ -1614,6 +1620,7 @@ function updateWeaponBar() {
 function switchWeapon(id) {
   if (!S.weapons || !S.weapons[id] || S.me.weapon === id) return;
   if (!S.me.alive) return;
+  S.firing = false;
   cancelWeaponFeedback();
   S.me.weapon = id;
   S.me.reloading = false;
@@ -1952,7 +1959,7 @@ function onKill(msg) {
     me.deadUntil = performance.now() + 2200;
     me.deadAt = performance.now();
     me.respawnAsked = false;
-    me.firing = false;
+    S.firing = false;
     if (me.aiming) stopAim();
     me.reloading = false;
     $('reloadHint').classList.add('hidden');
@@ -2547,6 +2554,7 @@ function playDeath() { tone(180, 0.5, 'sawtooth', 0.045, 40); }
 
 document.addEventListener('mousemove', (e) => {
   if (!S.locked || S.screen !== 'hud') return;
+  if (S.firing && !(e.buttons & 1)) S.firing = false;
   const w = currentWeapon();
   const aimMult = S.me.aiming ? (w && w.zoom ? 0.32 : SETTINGS.ads) : 1;
   const sens = 0.0022 * SETTINGS.sens * aimMult;
@@ -2599,6 +2607,8 @@ document.addEventListener('keyup', (e) => {
 });
 
 window.addEventListener('blur', () => { S.keys = Object.create(null); S.firing = false; jumpQueued = false; stopAim(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) S.firing = false; });
+document.addEventListener('pointercancel', () => { S.firing = false; });
 
 canvas.addEventListener('mousedown', () => Sound.resume());
 
@@ -2617,6 +2627,8 @@ canvas.addEventListener('mousedown', (e) => {
     return;
   }
 
+  if (S.firing) return;
+  S.firing = true;
   tryFire();
 });
 

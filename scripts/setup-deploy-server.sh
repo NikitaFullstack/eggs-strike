@@ -28,7 +28,7 @@ User=nobody
 Group=nogroup
 WorkingDirectory=/opt/egg-strike/current
 Environment=NODE_ENV=production
-Environment=PORT=3000
+Environment=PORT=3001
 ExecStart=/usr/bin/node /opt/egg-strike/current/server.js
 Restart=on-failure
 RestartSec=3
@@ -44,4 +44,4 @@ chmod 440 /etc/sudoers.d/egg-strike
 visudo -cf /etc/sudoers.d/egg-strike
 systemctl daemon-reload
 systemctl enable egg-strike.service
-echo 'Ready for the first deployment on port 3000.'
+echo 'Ready for the first deployment on port 3001.'

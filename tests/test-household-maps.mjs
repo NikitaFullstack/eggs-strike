@@ -11,7 +11,7 @@ for (const map of Household.maps) {
   const fixture = householdFixture(map);
   const { bounds, playerCollision: capsule } = map;
   const label = message => `${map.name}: ${message}`;
-  assert.deepEqual([bounds.widthX, bounds.depthZ], map.id === 'refrigerator' ? [26, 22] : [30, 24], label('larger arenas keep their three-player limit'));
+  assert.deepEqual([bounds.widthX, bounds.depthZ], map.id === 'refrigerator' ? [30, 26] : [34, 28], label('larger arenas keep their three-player limit'));
   assert.ok(map.mesh, label('gameplay uses the visible curved geometry'));
   assert.equal(map.players.max, 3);
   assert.equal(map.spawns.length, 3);
@@ -30,7 +30,7 @@ for (const map of Household.maps) {
   // walkable capsule sweeps. A floor cell cannot teleport onto the shelf above.
   const navigation = layeredNavigation(map, fixture);
   const { nodes, reached } = navigation;
-  assert.equal(map.layoutRevision, 2, label('persistent rooms can recognize the changed layout'));
+  assert.equal(map.layoutRevision, 3, label('persistent rooms can recognize the changed layout'));
   assert.ok(nodes.length > 1000, label('navigation samples the actual geometry'));
   assert.ok(reached.size / nodes.length > .98, label(`routes do not contain isolated playable pockets (${reached.size}/${nodes.length})`));
   for (const spawn of map.spawns) {

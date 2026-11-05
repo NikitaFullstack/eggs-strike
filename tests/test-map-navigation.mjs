@@ -3,6 +3,11 @@ import * as THREE from 'three';
 import { Octree } from 'three/addons/math/Octree.js';
 import { Capsule } from 'three/addons/math/Capsule.js';
 import MeshWorld from '../public/mesh-world.js';
+import G from '../public/arena-geometry.js';
+import Henhouse from '../public/henhouse-level.js';
+import Households from '../public/household-maps.js';
+import { householdFixture } from './household-fixture.mjs';
+import fs from 'node:fs';
 
 const arena = {
   bounds: { floorY: -20 },
@@ -43,5 +48,18 @@ assert.equal(underpass.groundHeight(0,0,.23), 0);
 assert.equal(underpass.groundHeight(0,0,1.83), 1.6);
 assert.ok(Math.abs(underpass.ceilingHeight(0,0,1.15)-1.6) < 1e-6);
 assert.equal(underpass.blocks(0,0,.6), true, 'The underside blocks the player body');
+
+const henhouse = Henhouse.build(JSON.parse(fs.readFileSync(new URL('../public/henhouse_ffa_level.json', import.meta.url))));
+for (const map of [henhouse, ...Households.maps]) {
+  const fixture = map.mesh ? householdFixture(map) : null;
+  const embedded = { x: map.bounds.maxX - .2, y: 0, z: 0 };
+  assert.equal(G.blocks(map, embedded.x, embedded.z, embedded.y), true, `${map.name}: boundary overlap is detected`);
+  const fixed = G.recoverPosition(map, embedded);
+  assert.ok(fixed && !G.blocks(map, fixed.x, fixed.z, fixed.y), `${map.name}: a shallow overlap can be escaped`);
+  assert.ok(Math.hypot(fixed.x - embedded.x, fixed.z - embedded.z) <= .61, 'Recovery stays local');
+  assert.equal(G.recoverPosition(map, fixed), null, 'Already clear positions are unchanged');
+  fixture?.dispose();
+}
+assert.equal(G.recoverPosition(henhouse, { x: 3, y: 0, z: -2.4 }), null, 'Deep overlaps do not teleport the player through a crate');
 
 console.log('PASS: shallow wall contacts on ramps; seamless slopes; upper deck support and underpass clearance');

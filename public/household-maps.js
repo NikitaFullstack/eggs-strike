@@ -34,11 +34,11 @@
     };
   }
 
-  const fridge = base('refrigerator', 'Холодильник', 'fridge', 26, 22, 7, 'plastic', {
+  const fridge = base('refrigerator', 'Холодильник', 'fridge', 30, 26, 7, 'plastic', {
     sky: 0xcddfe0, fog: 0xe2eeee, floor: 0xd9e9e8, wall: 0xf0f6eb, accent: 0x5bbabd,
   });
-  fridge.layoutRevision = 2;
-  fridge.description = '26 × 22 м · 3 игрока · верхняя полка и проходы под ней';
+  fridge.layoutRevision = 3;
+  fridge.description = '30 × 26 м · 3 игрока · верхняя полка и проходы под ней';
   fridge.crates = [
     prop('FR_SHELF_BACK','shelf','plastic',0,-5.6,18,3.4,2.8),
     prop('FR_SHELF_W','shelf','plastic',-7.7,-1.9,2.6,4,2.8),
@@ -54,7 +54,7 @@
     prop('FR_PICKLES','jar','tin',0,-2.3,2.2,2.2,3.1),
     prop('FR_YOGURT','yogurt','plastic',4.5,6.2,2.5,2.5,2.4),
     prop('FR_TOMATO','tomato','tomato',0,6.4,1.7,1.7,1.6),
-    { ...prop('FR_CEILING','box','plastic',0,0,26,22,.18,7), minimap:false },
+    { ...prop('FR_CEILING','box','plastic',0,0,30,26,.18,7), minimap:false },
   ];
   fridge.ramps = [
     { id:'FR_RAMP_W',type:'plastic',x:-7.7,z:2.7,w:2.6,d:5.2,dir:'-z',h0:0,h1:2.8 },
@@ -68,11 +68,11 @@
   fridge.showcase = {x:-9.8,y:0,z:8.4,yaw:-.48,pitch:.13};
   fridge.showcaseUpper = {x:-7.7,y:2.8,z:-4.9,yaw:-1.1,pitch:-.08};
 
-  const kitchen = base('kitchen', 'Кухня', 'kitchen', 30, 24, 7.5, 'tile', {
+  const kitchen = base('kitchen', 'Кухня', 'kitchen', 34, 28, 7.5, 'tile', {
     sky: 0xd5e5dd, fog: 0xf2dfbd, floor: 0xc3aa80, wall: 0xd8e8df, accent: 0xc15e40,
   });
-  kitchen.layoutRevision = 2;
-  kitchen.description = '30 × 24 м · 3 игрока · остров, мостик и нижние проходы';
+  kitchen.layoutRevision = 3;
+  kitchen.description = '34 × 28 м · 3 игрока · остров, мостик и нижние проходы';
   kitchen.crates = [
     prop('KT_ISLAND','island','wood',-3,.5,7,5,2.1),
     prop('KT_SIDE_COUNTER','island','wood',6.6,-3,5.2,6,2.1),
@@ -87,7 +87,7 @@
     prop('KT_KETTLE','kettle','metal',7.7,-3.2,2.4,2.2,2.4,2.1,-.6),
     prop('KT_COOKIE_TIN','jar','tin',0,-9.1,2.4,2.4,3.1),
     prop('KT_PLATE','plate','plastic',11.6,1.2,3.2,3.2,.28),
-    { ...prop('KT_CEILING','box','plastic',0,0,30,24,.18,7.5), minimap:false },
+    { ...prop('KT_CEILING','box','plastic',0,0,34,28,.18,7.5), minimap:false },
   ];
   kitchen.ramps = [
     {id:'KT_RAMP_W',type:'wood',x:-8.9,z:1.2,w:4.8,d:2.4,dir:'+x',h0:0,h1:2.1},

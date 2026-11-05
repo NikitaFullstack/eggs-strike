@@ -28,13 +28,13 @@
     "boxPositionsReferTo": "ground center (bottom at y=0), except catwalk decks use topY"
   },
   "arena": {
-    "widthX": 20.0,
-    "depthZ": 16.0,
+    "widthX": 24.0,
+    "depthZ": 20.0,
     "floorY": 0.0,
-    "minX": -10.0,
-    "maxX": 10.0,
-    "minZ": -8.0,
-    "maxZ": 8.0,
+    "minX": -12.0,
+    "maxX": 12.0,
+    "minZ": -10.0,
+    "maxZ": 10.0,
     "boundaryWalls": {
       "thickness": 0.3,
       "height": 3.0,

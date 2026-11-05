@@ -120,6 +120,22 @@
     return arena.mesh ? meshWorlds.get(arena.id).moveVertical(position, deltaY) : null;
   }
 
+  // Only repair an existing overlap, never move a player who is already clear.
+  // Search nearby positions at the same height so a contact cannot send the
+  // player through a floor or teleport them across a room.
+  function recoverPosition(arena, position) {
+    if (!blocks(arena, position.x, position.z, position.y)) return null;
+    for (let distance = .05; distance <= .6001; distance += .05) {
+      for (let i = 0; i < 24; i++) {
+        const angle = i * Math.PI / 12;
+        const x = position.x + Math.cos(angle) * distance;
+        const z = position.z + Math.sin(angle) * distance;
+        if (!blocks(arena, x, z, position.y)) return { x, y: position.y, z };
+      }
+    }
+    return null;
+  }
+
   // Exact convex polygon faces, matching CylinderGeometry/ConeGeometry.
   function rayRound(origin, direction, solid) {
     let nearest = Infinity;
@@ -178,5 +194,5 @@
     return !arena.rounds.some(r=>rayRound(from,d,r)<length-.001)&&!arena.ramps.some(r=>rayRamp(from,d,r)<length-.001);
   }
 
-  return { registerMesh, rayMesh, rayRamp, rayBox, visible, ROUND_SEGMENTS, stairBoxes, boxes, rampT, blocks, groundHeight, ceilingHeight, moveVertical, roundParts, rayRound };
+  return { registerMesh, rayMesh, rayRamp, rayBox, visible, ROUND_SEGMENTS, stairBoxes, boxes, rampT, blocks, groundHeight, ceilingHeight, moveVertical, recoverPosition, roundParts, rayRound };
 });

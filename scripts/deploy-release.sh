@@ -14,7 +14,7 @@ cd "$release"
 npm ci --omit=dev
 ln -sfn "$release" "$root/current.next"
 mv -Tf "$root/current.next" "$root/current"
-if ! sudo -n /usr/bin/systemctl restart egg-strike.service || ! curl --fail --silent --retry 10 --retry-delay 1 --retry-connrefused http://127.0.0.1:3000/ | grep -q 'ЯЙЦА — перестрелка' || ! systemctl is-active --quiet egg-strike.service; then
+if ! sudo -n /usr/bin/systemctl restart egg-strike.service || ! curl --fail --silent --retry 10 --retry-delay 1 --retry-connrefused http://127.0.0.1:3001/ | grep -q 'ЯЙЦА — перестрелка' || ! systemctl is-active --quiet egg-strike.service; then
   echo 'Deployment failed; restoring previous release' >&2
   if [[ -n $previous && -d $previous ]]; then
     ln -sfn "$previous" "$root/current.next"

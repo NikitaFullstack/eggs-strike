@@ -51,6 +51,6 @@ try {
  }
  const goals=[...level.spawns.map(s=>[s.position[0],s.position[2]]),...level.ramps.map(r=>[r.centerX,(r.startY===0?r.startZ-.2:r.endZ+.2)]),[0,2.2]];
  for(const [x,z] of goals)assert.ok(open.has(key(Math.round((x-minX)/step),Math.round((z-minZ)/step))),`Reachable route to ${x},${z}`);
- assert.equal(G.blocks(map,9.6,0,0),true,'Boundary walls stop the capsule');
+ assert.equal(G.blocks(map,11.6,0,0),true,'Boundary walls stop the capsule');
  console.log('PASS: exact JSON solids; two 1.8 m decks; four slopes; 1.6 m underpasses; six occluded spawn pairs; all ground routes');
 }finally{ws.close();}

@@ -43,10 +43,16 @@ try {
   await page.waitForFunction(() => window.__egg.S.locked);
   const ammo = await page.evaluate(() => window.__egg.S.me.ammo[window.__egg.S.me.weapon]);
   await page.mouse.move(640, 400);
+  await page.mouse.click(640, 400);
+  await page.waitForTimeout(450);
+  assert.equal(await page.evaluate(() => window.__egg.S.me.ammo[window.__egg.S.me.weapon]), ammo - 1, 'A quick click produces only one shot');
   await page.mouse.down();
-  await page.waitForTimeout(600);
+  await page.waitForFunction(initial => window.__egg.S.me.ammo[window.__egg.S.me.weapon] < initial - 2, ammo, {timeout: 6000});
   await page.mouse.up();
-  assert.equal(await page.evaluate(() => window.__egg.S.me.ammo[window.__egg.S.me.weapon]), ammo - 1, 'Holding a click never starts a burst');
+  const afterHold = await page.evaluate(() => window.__egg.S.me.ammo[window.__egg.S.me.weapon]);
+  assert.ok(afterHold < ammo - 2, 'Holding an automatic weapon fires a burst');
+  await page.waitForTimeout(450);
+  assert.equal(await page.evaluate(() => window.__egg.S.me.ammo[window.__egg.S.me.weapon]), afterHold, 'Firing stops when the button is released');
   await page.screenshot({ path: '/tmp/egg-practice-ui.png' });
   assert.deepEqual(errors, []);
   console.log('PASS: practice button starts the selected map with two server bots rendered in the HUD');
